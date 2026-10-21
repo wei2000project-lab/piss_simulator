@@ -3,3 +3,4 @@ node_modules/
 .cache/
 artifacts/
 *.log
+/實作要求.md
