@@ -64,6 +64,8 @@
 - `src/fluids.js`：單一 InstancedMesh 批次繪製分段水柱、飛濺粒子、波紋，以及單一地面遮罩材質。
 - `src/puddles.js`：真實覆蓋範圍命中、水窪連通性、保留各分支形狀的聯集遮罩；重疊處取最大覆蓋率，不堆疊透明度。
 - `src/game.js`：遊戲狀態、飛行中的水量、移動、跳躍、任務與 UI。
+- `src/render-loop.js`：有變化才重畫的排程、60 FPS 上限、背景停繪與解析度預算。
+- `src/static-scene.js`：保留房間分組、材質與世界座標的靜態幾何批次合併。
 - `src/audio.js`：Web Audio 程序水聲與完成提示音。
 - `desktop.cjs`、`preload.cjs`：Electron 桌面視窗、受限 IPC、快捷鍵攔截與生命週期。
 - `native/CursorBridge.cs`：Windows `ClipCursor` 真實限制游標、`SetCursorPos` 定位、Raw Input 擷取相對位移。透過內建 Windows PowerShell 的 `Add-Type` 載入，不需額外安裝編譯器。
@@ -72,17 +74,27 @@
 
 不使用瀏覽器假的游標圖片。右鍵模式會把 Windows 裁切矩形設為當前游標的 **1 × 1 實體像素**，Raw Input 繼續接收硬體位移；Ctrl 模式先移至內容視窗中央。原生助手在標準輸入斷線時也會解除鎖定並退出。
 
+## GPU 效能
+
+活動畫面最高 60 FPS；人物靜止且水柱、飛濺、沖水、門動畫都結束後，保留最後一幀並停止排程。輸入、清理、重置、視窗尺寸變更會喚醒繪圖；暫停、開啟說明、失去焦點、最小化或分頁隱藏時停止連續渲染，恢復後不補算背景經過的時間。水柱仍按模擬時間每秒發射 60 段，不依賴畫面幀數。
+
+467 個靜態網格合併成 73 個材質批次，保留浴室／客廳／廚房分組及視錐剔除；浴室門關閉時，牆後另一側的房間不送進渲染器，共用隔牆和門框則始終保留。三張固定光源陰影圖在啟動時產生並快取，開關門不會重新計算全場陰影；門使用隨門旋轉的輕量接觸陰影。鏡面反射降為 384 × 384、最高 30 次／秒，離開視野或房間隱藏時不更新。水柱保留透明材質，移除需要額外場景通道的螢幕空間折射。
+
+3D 內部解析度限制在約 1920 × 1080 像素總量，像素比例最高 1.25；高 DPI 或 4K 視窗不會無限制提高 GPU 像素工作量，介面仍使用原生視窗解析度。優化前後實測及畫面取捨見 [PERFORMANCE.md](PERFORMANCE.md)。
+
 ## 驗證
 
 純邏輯測試（有 Node.js 時）：
 
 ```powershell
-node --test tests/physics.test.mjs tests/puddles.test.mjs tests/water.test.mjs tests/door.test.mjs tests/kitchen.test.mjs tests/server.test.cjs
+node --test tests/physics.test.mjs tests/puddles.test.mjs tests/water.test.mjs tests/door.test.mjs tests/kitchen.test.mjs tests/render.test.mjs tests/server.test.cjs
 ```
 
-35 項測試涵蓋重力與碰撞、獨立水段、每秒 60 段、不同幀率的水量守恆、水窪聯集、門的雙側操作、開關門時的人物與水柱碰撞、旋轉門扇的真實形狀、防夾反向、廚房來回通行、拓寬後的浴室與外牆邊界、廚具碰撞與排水、新增地板積水，以及本機動態 port 與資產存取範圍。
+43 項測試涵蓋重力與碰撞、獨立水段、每秒 60 段、不同幀率的水量守恆、水窪聯集、門的雙側操作、開關門時的人物與水柱碰撞、旋轉門扇的真實形狀、防夾反向、廚房來回通行、拓寬後的浴室與外牆邊界、廚具碰撞與排水、新增地板積水、60／144／240 Hz 顯示器的幀率限制、停繪與喚醒、解析度上限、靜態批次世界座標，以及本機動態 port 與資產存取範圍。
 
 `tests/desktop-check.cjs` 是本次開發環境用的 Playwright 桌面整合驗證，包含讀取 Windows 真實游標裁切矩形、Ctrl+W、跳躍、入桶計量、目標／沖水、地板積水、清理、補充、暫停、說明、重置、開關門、三區域往返、廚具阻擋、廚房積水與小視窗截圖。其 Playwright 路徑需依電腦環境調整。驗證畫面存於 `artifacts/`。
+
+`tests/performance-check.cjs` 在實際 Electron／WebGL 畫面計算繪製呼叫，驗證靜止、暫停、最小化均不繪圖、活動不超過 60 FPS 的取樣幀數上限、靜態陰影不重算，以及跳躍、調整視窗大小與恢復視窗能喚醒畫面。結果存於 `artifacts/performance-after.json`。
 
 Web 預覽（僅供開發）：
 

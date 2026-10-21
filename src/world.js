@@ -6,9 +6,11 @@ import { TOILET, DOOR_CONTROLLER } from './spaces.js';
 import { DOOR } from './door.js';
 import { createLivingRoom } from './living-room.js';
 import { createKitchen } from './kitchen.js';
+import { batchStaticScene } from './static-scene.js';
 export { TOILET, ROOM, COLLIDERS } from './spaces.js';
 
 export function createWorld(scene, renderer) {
+  let zone='bathroom',mirrorPasses=0,lastMirror=-Infinity;
   const pmrem = new THREE.PMREMGenerator(renderer);
   const env = new RoomEnvironment();
   const environment = pmrem.fromScene(env, .04);
@@ -38,7 +40,7 @@ export function createWorld(scene, renderer) {
   };
   function mesh(geo, material, position, scale) {
     const m = new THREE.Mesh(geo, material); if (position) m.position.set(...position); if (scale) m.scale.set(...scale);
-    m.castShadow = true; m.receiveShadow = true; scene.add(m); return m;
+    m.castShadow = true; m.receiveShadow = true;m.userData.zone=zone; scene.add(m); return m;
   }
   function box(x, y, z, w, h, d, material, radius = .02) { return mesh(radius ? new RoundedBoxGeometry(w, h, d, 3, Math.min(radius, w / 3, h / 3, d / 3)) : new THREE.BoxGeometry(w, h, d), material, [x, y, z]); }
   function cylinder(x, y, z, r, h, material, bottom = r) { return mesh(new THREE.CylinderGeometry(r, bottom, h, 32), material, [x, y, z]); }
@@ -65,6 +67,7 @@ export function createWorld(scene, renderer) {
   box(-3.44, .065, 0, .07, .13, 8, materials.ivory, .01);
   box(3.44, .065, 0, .07, .13, 8, materials.ivory, .01);
   // A real opening connects the rooms; there is no solid wall behind the door.
+  zone='shared';
   box(-1.84,1.7,4.07,3.32,3.4,.2,materials.wall);
   box(2.29,1.7,4.07,2.42,3.4,.2,materials.wall);
   box(.45,2.89,4.07,1.26,1.02,.2,materials.wall);
@@ -72,15 +75,17 @@ export function createWorld(scene, renderer) {
   box(.45, 2.43, 3.89, 1.42, .08, .12, materials.ivory);
   for(const x of [-.22,1.12])box(x,1.2,4.23,.08,2.5,.12,materials.ivory);
   box(.45,2.43,4.23,1.42,.08,.12,materials.ivory);
-  const doorPivot=new THREE.Group();doorPivot.position.set(DOOR.hingeX,0,DOOR.z);scene.add(doorPivot);
-  const doorPart=part=>{doorPivot.add(part);return part;};
+  const doorPivot=new THREE.Group();doorPivot.userData.dynamic=true;doorPivot.position.set(DOOR.hingeX,0,DOOR.z);scene.add(doorPivot);
+  const doorPart=part=>{part.castShadow=false;doorPivot.add(part);return part;};
   doorPart(box(DOOR.width/2,1.19,0,DOOR.width,2.36,DOOR.thickness,materials.wood,.025));
   for(const side of [-1,1]){
     const handle=doorPart(cylinder(DOOR.width-.14,1.08,side*.052,.038,.038,materials.brass));handle.rotation.x=Math.PI/2;
     doorPart(box(DOOR.width-.21,1.08,side*.079,.2,.027,.035,materials.brass,.008));
   }
   for(const y of [.42,1.9])doorPart(cylinder(0,y,0,.025,.12,materials.brass));
+  doorPart(contactShadow(scene,DOOR.width/2,0,.5,.1,.19));
   DOOR_CONTROLLER.reset();
+  zone='bathroom';
 
   // White porcelain toilet, with an actual open bowl and water surface.
   const { x: tx, z: tz } = TOILET;
@@ -93,6 +98,7 @@ export function createWorld(scene, renderer) {
   cylinder(tx+.22, 1.411, tz-.66, .066, .025, materials.brass);
   const lid = mesh(new THREE.SphereGeometry(1, 40, 24), materials.porcelain, [tx, 1.1, tz-.48], [.425, .47, .045]); lid.rotation.x = -.11;
   const water = mesh(new THREE.CircleGeometry(.3, 64), new THREE.MeshPhysicalMaterial({ color: '#aebfa0', roughness: .08, metalness: .12, transparent: true, opacity: .8, clearcoat: 1 }), [tx, TOILET.water, tz], [1, 1.35, 1]); water.rotation.x = -Math.PI / 2; water.castShadow = false;
+  water.userData.dynamic=true;
   contactShadow(scene, tx, tz, .7, .95, .22);
   // Paper holder and a wall print.
   pipe([[-1.75,.93,-3.95],[-1.75,.93,-3.7],[-1.75,.93,-3.45]], .017, materials.brass);
@@ -125,7 +131,12 @@ export function createWorld(scene, renderer) {
   pipe([[-3.23,1.03,-2.16],[-3.23,1.32,-2.16],[-3.05,1.35,-2.16],[-3.02,1.27,-2.16]],.022,materials.brass);
   cylinder(-3.12,1.06,-1.55,.055,.17,new THREE.MeshStandardMaterial({color:'#9b7750',transparent:true,opacity:.8,roughness:.3}));
   box(-3.12,1.17,-1.55,.09,.026,.04,materials.brass,.01);
-  const mirror = new Reflector(new THREE.CircleGeometry(.57,64),{color:0xc4cbbb,textureWidth:512,textureHeight:512,clipBias:.003});mirror.rotation.y=Math.PI/2;mirror.position.set(-3.425,2.03,-2.08);scene.add(mirror);
+  const mirror = new Reflector(new THREE.CircleGeometry(.57,64),{color:0xc4cbbb,textureWidth:384,textureHeight:384,multisample:0,clipBias:.003});mirror.rotation.y=Math.PI/2;mirror.position.set(-3.425,2.03,-2.08);scene.add(mirror);
+  const reflect=mirror.onBeforeRender;
+  mirror.onBeforeRender=function(...args){
+    const time=performance.now();if(time-lastMirror<1000/30)return;
+    lastMirror=time;mirrorPasses++;reflect.apply(this,args);
+  };
   const mirrorRim=mesh(new THREE.TorusGeometry(.59,.022,12,64),materials.brass,[-3.4,2.03,-2.08]);mirrorRim.rotation.y=Math.PI/2;
   box(-3.35,2.74,-2.08,.12,.055,.69,materials.brass);
   contactShadow(scene,-2.98,-2.1,.64,1.0,.17);
@@ -167,13 +178,28 @@ export function createWorld(scene, renderer) {
   box(-2.92,.66,1.77,.46,.08,.49,materials.ivory,.035);
   box(-3.41,1.7,.5,.06,.045,1.1,materials.brass);
   box(-3.3,1.48,.57,.025,.45,.55,materials.cloth,.01);
-  const builders={mesh,box,cylinder,pipe,materials,shadow:(...args)=>contactShadow(scene,...args)};
+  const builders={mesh,box,cylinder,pipe,materials,shadow:(...args)=>{const m=contactShadow(scene,...args);m.userData.zone=zone;return m;}};
+  zone='living';
   createLivingRoom(scene,builders);
+  zone='kitchen';
   createKitchen(scene,builders);
+  const batches=batchStaticScene(scene),shadowLights=[];
+  scene.traverse(object=>{if(object.isLight&&object.castShadow){object.shadow.autoUpdate=false;object.shadow.needsUpdate=true;shadowLights.push(object);}});
   return {
-    water,tubWater,sunlight,environment,materials,mirror,door:DOOR_CONTROLLER,
-    update(dt,player){const changed=DOOR_CONTROLLER.step(dt,player);doorPivot.rotation.y=DOOR_CONTROLLER.angle;if(changed)renderer.shadowMap.needsUpdate=true;},
-    resetDoor(){DOOR_CONTROLLER.reset();doorPivot.rotation.y=0;renderer.shadowMap.needsUpdate=true;},
+    water,tubWater,sunlight,environment,materials,mirror,door:DOOR_CONTROLLER,batches,shadowLights,
+    get mirrorPasses(){return mirrorPasses;},
+    get animating(){return Math.abs(DOOR_CONTROLLER.angle-(DOOR_CONTROLLER.targetOpen?DOOR_CONTROLLER.openAngle:0))>1e-6;},
+    update(dt,player){DOOR_CONTROLLER.step(dt,player);doorPivot.rotation.y=DOOR_CONTROLLER.angle;},
+    prepare(player){
+      // Capture all static shadow casters once, before hiding closed rooms.
+      if(renderer.shadowMap.needsUpdate)return;
+      const open=Math.abs(DOOR_CONTROLLER.angle)>.01,inside=player.z<DOOR.z;
+      batches.groups.bathroom.visible=open||inside;
+      batches.groups.living.visible=batches.groups.kitchen.visible=open||!inside;
+      mirror.visible=open||inside;
+    },
+    resetDoor(){DOOR_CONTROLLER.reset();doorPivot.rotation.y=0;lastMirror=-Infinity;},
+    restore(){for(const group of Object.values(batches.groups))group.visible=true;for(const light of shadowLights)light.shadow.needsUpdate=true;renderer.shadowMap.needsUpdate=true;lastMirror=-Infinity;},
   };
 }
 
@@ -194,4 +220,5 @@ function roundRect(w,h,r){const s=new THREE.Shape(),x=-w/2,y=-h/2;s.moveTo(x+r,y
 function contactShadow(scene,x,z,sx,sz,opacity){
   const t=new THREE.CanvasTexture(canvas(128,128,ctx=>{const g=ctx.createRadialGradient(64,64,0,64,64,64);g.addColorStop(0,'#23332099');g.addColorStop(.45,'#23332044');g.addColorStop(1,'#23332000');ctx.fillStyle=g;ctx.fillRect(0,0,128,128);}));
   const m=new THREE.Mesh(new THREE.PlaneGeometry(sx*2.6,sz*2.6),new THREE.MeshBasicMaterial({map:t,transparent:true,opacity,depthWrite:false}));m.rotation.x=-Math.PI/2;m.position.set(x,.008,z);scene.add(m);
+  return m;
 }

@@ -7,7 +7,7 @@ export class Fluids {
     this.scene=scene;this.field=new PuddleField();this.mask=new PuddleMask(ROOM);this.drops=[];this.ripples=[];
     this.dummy=new THREE.Object3D();this.up=new THREE.Vector3(0,1,0);this.direction=new THREE.Vector3();
     this.stream=new THREE.InstancedMesh(new THREE.CapsuleGeometry(1,1,2,6),new THREE.MeshPhysicalMaterial({
-      color:'#efe3a4',transparent:true,opacity:.68,transmission:.3,thickness:.025,roughness:.13,metalness:.03,clearcoat:1,depthWrite:false,
+      color:'#efe3a4',transparent:true,opacity:.6,roughness:.13,metalness:.03,clearcoat:1,depthWrite:false,
     }),256);
     this.stream.instanceMatrix.setUsage(THREE.DynamicDrawUsage);this.stream.count=0;this.stream.frustumCulled=false;this.stream.visible=false;scene.add(this.stream);
 
@@ -27,6 +27,7 @@ export class Fluids {
     this.dropIndex=0;this.rippleIndex=0;this.splashTime=0;
   }
   get puddles(){return this.field.pools;}
+  get animating(){return this.drops.some(d=>d.life>0)||this.ripples.some(r=>r.life>0);}
   showSegments(segments){
     let count=0;
     for(const segment of segments){
