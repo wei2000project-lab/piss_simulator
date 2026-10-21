@@ -5,12 +5,14 @@ export function createLivingRoom(scene,{mesh,box,cylinder,pipe,materials,shadow}
   const linen=new THREE.MeshStandardMaterial({color:'#e5d8ba',roughness:1});
   const clay=new THREE.MeshStandardMaterial({color:'#b77c5d',roughness:.92});
   const darkWood=new THREE.MeshStandardMaterial({color:'#786344',roughness:.55});
-  const floor=mesh(new THREE.PlaneGeometry(7,8),new THREE.MeshStandardMaterial({map:plankTexture(),roughness:.48}),[0,0,8]);floor.rotation.x=-Math.PI/2;
+  const floor=mesh(new THREE.PlaneGeometry(12.5,8),new THREE.MeshStandardMaterial({map:plankTexture(),roughness:.48}),[2.75,0,8]);floor.rotation.x=-Math.PI/2;
   box(-3.59,1.7,8,.18,3.4,8.2,materials.wall);
-  box(3.59,1.7,8,.18,3.4,8.2,materials.wall);
-  box(0,1.7,12.08,7.2,3.4,.16,materials.wall);
-  for(const x of [-3.44,3.44])box(x,.07,8,.07,.14,8,materials.ivory,.01);
-  box(0,.07,11.94,7,.14,.07,materials.ivory,.01);
+  box(9.09,1.7,8,.18,3.4,8.2,materials.wall);
+  box(2.75,1.7,12.08,12.7,3.4,.16,materials.wall);
+  box(6.25,1.7,4.07,5.5,3.4,.2,materials.wall);
+  for(const x of [-3.44,8.94])box(x,.07,8,.07,.14,8,materials.ivory,.01);
+  box(2.75,.07,11.94,12.5,.14,.07,materials.ivory,.01);
+  box(6.25,.07,4.21,5.5,.14,.05,materials.ivory,.01);
   for(const [x,w] of [[-1.84,3.32],[2.29,2.42]])box(x,.07,4.21,w,.14,.05,materials.ivory,.01);
 
   // An uninterrupted walking route runs from the door into the seating area.
@@ -105,7 +107,7 @@ function plankTexture(){
       const x=col*342+(row%2)*171,y=row*128;ctx.fillStyle=shades[(row+col+8)%4];ctx.fillRect(x+1,y+1,340,126);
       for(let grain=0;grain<15;grain++){ctx.strokeStyle=grain%3?'#66533815':'#f4e1b624';ctx.lineWidth=.6+(grain%2);ctx.beginPath();ctx.moveTo(x+5,y+grain*8+4);ctx.bezierCurveTo(x+100,y+grain*8+8,x+220,y+grain*8, x+336,y+grain*8+5);ctx.stroke();}
     }
-  });t.wrapS=t.wrapT=THREE.RepeatWrapping;t.repeat.set(2,2);return t;
+  });t.wrapS=t.wrapT=THREE.RepeatWrapping;t.repeat.set(25/7,2);return t;
 }
 function rugTexture(){return texture(512,512,ctx=>{ctx.fillStyle='#d8c8a2';ctx.fillRect(0,0,512,512);ctx.strokeStyle='#a6815c';ctx.lineWidth=5;ctx.strokeRect(25,25,462,462);ctx.strokeStyle='#899477';ctx.lineWidth=2;for(let x=-512;x<1024;x+=54){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x+512,512);ctx.stroke();}ctx.strokeStyle='#eee1bd';ctx.strokeRect(38,38,436,436);});}
 function gardenTexture(){return texture(512,384,ctx=>{const g=ctx.createLinearGradient(0,0,0,384);g.addColorStop(0,'#c6d4c5');g.addColorStop(.6,'#f2e9cb');g.addColorStop(1,'#9eaf87');ctx.fillStyle=g;ctx.fillRect(0,0,512,384);ctx.fillStyle='#f6ebc3';ctx.beginPath();ctx.arc(355,110,43,0,Math.PI*2);ctx.fill();for(let i=0;i<12;i++){ctx.fillStyle=['#96a580','#a8b48c','#879b7a'][i%3];ctx.beginPath();ctx.ellipse(i*48,350+(i%3)*20,90,80+i%4*20,0,0,Math.PI*2);ctx.fill();}});}

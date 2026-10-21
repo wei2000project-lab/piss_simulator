@@ -5,6 +5,7 @@ import { Reflector } from 'three/addons/objects/Reflector.js';
 import { TOILET, DOOR_CONTROLLER } from './spaces.js';
 import { DOOR } from './door.js';
 import { createLivingRoom } from './living-room.js';
+import { createKitchen } from './kitchen.js';
 export { TOILET, ROOM, COLLIDERS } from './spaces.js';
 
 export function createWorld(scene, renderer) {
@@ -14,7 +15,7 @@ export function createWorld(scene, renderer) {
   scene.environment = environment.texture;
   env.dispose(); pmrem.dispose();
   scene.background = new THREE.Color('#ddd8c1');
-  scene.fog = new THREE.Fog('#d7d3bc', 12, 26);
+  scene.fog = new THREE.Fog('#d7d3bc', 16, 32);
   scene.environmentIntensity = .48;
   scene.add(new THREE.HemisphereLight('#fff5dc', '#829175', .95));
   const sunlight = new THREE.DirectionalLight('#fff3c9', 3.1);
@@ -166,7 +167,9 @@ export function createWorld(scene, renderer) {
   box(-2.92,.66,1.77,.46,.08,.49,materials.ivory,.035);
   box(-3.41,1.7,.5,.06,.045,1.1,materials.brass);
   box(-3.3,1.48,.57,.025,.45,.55,materials.cloth,.01);
-  createLivingRoom(scene,{mesh,box,cylinder,pipe,materials,shadow:(...args)=>contactShadow(scene,...args)});
+  const builders={mesh,box,cylinder,pipe,materials,shadow:(...args)=>contactShadow(scene,...args)};
+  createLivingRoom(scene,builders);
+  createKitchen(scene,builders);
   return {
     water,tubWater,sunlight,environment,materials,mirror,door:DOOR_CONTROLLER,
     update(dt,player){const changed=DOOR_CONTROLLER.step(dt,player);doorPivot.rotation.y=DOOR_CONTROLLER.angle;if(changed)renderer.shadowMap.needsUpdate=true;},

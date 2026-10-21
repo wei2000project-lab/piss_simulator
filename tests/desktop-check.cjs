@@ -104,6 +104,26 @@ function cursorState(){
     await page.screenshot({path:path.join(out,'16-living-room-water.png')});await page.mouse.up();
     await page.waitForFunction(()=>window.bathroomDebug.snapshot().pending===0);
     assert.ok((await snap()).puddles.some(p=>p.z>4.2));await page.keyboard.press('c');
+    // Walk across the former right wall into the kitchen, with no debug teleport.
+    await turn(-Math.PI/2,-.18);
+    await page.keyboard.down('w');await page.waitForFunction(()=>window.bathroomDebug.snapshot().player.x>3.5);await page.keyboard.up('w');
+    await turn(-2.35,-.14);await page.screenshot({path:path.join(out,'17-open-kitchen.png')});
+    await turn(-Math.PI/2,-.18);
+    await page.keyboard.down('w');await page.waitForFunction(()=>window.bathroomDebug.snapshot().player.x>6.35);await page.keyboard.up('w');
+    assert.equal((await snap()).area,'廚房');await page.waitForFunction(()=>document.getElementById('area-name').textContent==='廚房');
+    await turn(Math.PI,-.35);assert.equal((await snap()).trace.kind,'floor');
+    await page.mouse.down();await page.waitForFunction(()=>window.bathroomDebug.snapshot().state.floor>45,null,{timeout:15000});
+    await page.screenshot({path:path.join(out,'18-kitchen-water.png')});await page.mouse.up();
+    await page.waitForFunction(()=>window.bathroomDebug.snapshot().pending===0);
+    assert.ok((await snap()).patches.some(p=>p.x>4.7));await page.keyboard.press('c');
+    await page.keyboard.down('w');await page.waitForFunction(()=>window.bathroomDebug.snapshot().player.z>10.4);await page.waitForTimeout(750);await page.keyboard.up('w');
+    assert.ok((await snap()).player.z<10.95,'back counter must block the player');
+    await turn(Math.PI,-.2);await page.screenshot({path:path.join(out,'19-kitchen-sink.png')});
+    await page.keyboard.down('s');await page.waitForFunction(()=>window.bathroomDebug.snapshot().player.z<6.5);await page.keyboard.up('s');
+    await turn(Math.PI/2,-.18);
+    await page.keyboard.down('w');await page.waitForFunction(()=>window.bathroomDebug.snapshot().player.x<.55);await page.keyboard.up('w');
+    assert.equal((await snap()).area,'客廳');await turn(Math.PI,-.18);
+    console.log('Expanded right side, kitchen navigation, cabinet collision, kitchen floor water and return to living room passed');
     await page.keyboard.down('s');await page.waitForFunction(()=>window.bathroomDebug.snapshot().player.z<5.5);await page.keyboard.up('s');
     await page.keyboard.press('f');await page.waitForFunction(()=>Math.abs(window.bathroomDebug.snapshot().door.angle)<.01);
     await turn(0,-.18);await page.screenshot({path:path.join(out,'15-door-closed-from-living.png')});
