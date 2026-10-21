@@ -8,6 +8,17 @@ export function ellipseContains(x, z, center, radiusX, radiusZ) {
 export function pointAt(origin, velocity, t) {
   return { x: origin.x+velocity.x*t, y: origin.y+velocity.y*t-GRAVITY*t*t/2, z: origin.z+velocity.z*t };
 }
+function segmentBoxHit(start,end,box){
+  let enter=0,exit=1;
+  for(const [axis,min,max] of [['x',box.minX,box.maxX],['y',0,box.height],['z',box.minZ,box.maxZ]]){
+    const delta=end[axis]-start[axis];
+    if(Math.abs(delta)<1e-10){if(start[axis]<min||start[axis]>max)return null;continue;}
+    const first=(min-start[axis])/delta,last=(max-start[axis])/delta;
+    enter=Math.max(enter,Math.min(first,last));exit=Math.min(exit,Math.max(first,last));
+    if(enter>exit)return null;
+  }
+  return enter;
+}
 export function traceStream(origin, velocity, toilet, room, obstacles) {
   const points = [{ ...origin }];
   let prev = origin, inBowl = false;
@@ -36,11 +47,17 @@ export function traceStream(origin, velocity, toilet, room, obstacles) {
       const hit={x:Math.max(room.minX+.04,Math.min(room.maxX-.04,p.x)),y:Math.max(.02,p.y),z:Math.max(room.minZ+.04,Math.min(room.maxZ-.04,p.z))};
       points.push(hit);return {points,kind:'wall',point:hit,time:t};
     }
+    let closest=null;
     for(let j=0;j<obstacles.length;j++){
       // The curved toilet bowl is handled above; the tank remains solid.
       const b=obstacles[j];
-      if(b.toilet && p.z>toilet.z-.48) continue;
-      if(p.x>b.minX&&p.x<b.maxX&&p.z>b.minZ&&p.z<b.maxZ&&p.y<b.height){points.push(p);return {points,kind:'object',point:p,time:t,obstacle:j};}
+      if(b.toilet) continue;
+      const fraction=segmentBoxHit(prev,p,b);
+      if(fraction!==null&&(!closest||fraction<closest.fraction))closest={fraction,obstacle:j};
+    }
+    if(closest){
+      const f=closest.fraction,hit={x:prev.x+(p.x-prev.x)*f,y:prev.y+(p.y-prev.y)*f,z:prev.z+(p.z-prev.z)*f};
+      points.push(hit);return {points,kind:'object',point:hit,time:(i-1+f)*.012,obstacle:closest.obstacle};
     }
     points.push(p);prev=p;
   }

@@ -1,19 +1,31 @@
 import * as THREE from 'three';
-import { TOILET, ROOM } from './world.js';
+import { TOILET, ROOM, COLLIDERS } from './world.js';
+import { PuddleField, resolvePuddlePoint } from './puddles.js';
 
 export class Fluids {
   constructor(scene) {
-    this.scene=scene;this.puddles=[];this.drops=[];this.ripples=[];
+    this.scene=scene;this.field=new PuddleField();this.puddles=this.field.pools;this.puddleMeshes=new Map();this.drops=[];this.ripples=[];
     const segments=112,sides=7,positions=new Float32Array((segments+1)*sides*3),indices=[];
     this.segments=segments;this.sides=sides;
     for(let i=0;i<segments;i++)for(let j=0;j<sides;j++){const a=i*sides+j,b=i*sides+(j+1)%sides;indices.push(a,b,a+sides,b,b+sides,a+sides);}
     this.geometry=new THREE.BufferGeometry();this.geometry.setAttribute('position',new THREE.BufferAttribute(positions,3));this.geometry.setIndex(indices);
     this.stream=new THREE.Mesh(this.geometry,new THREE.MeshPhysicalMaterial({color:'#efe3a4',transparent:true,opacity:.65,transmission:.42,thickness:.035,roughness:.13,metalness:.03,clearcoat:1,depthWrite:false,side:THREE.DoubleSide}));
     this.stream.frustumCulled=false;this.stream.visible=false;scene.add(this.stream);
-    this.puddleMaterial=new THREE.MeshPhysicalMaterial({color:'#d2bd66',transparent:true,opacity:.46,roughness:.09,metalness:.12,clearcoat:1,depthWrite:false,side:THREE.DoubleSide});
-    const shape=new THREE.Shape();
-    for(let i=0;i<=48;i++){const a=i/48*Math.PI*2,r=1+Math.sin(a*3+.4)*.08+Math.cos(a*5)*.045;const x=Math.cos(a)*r,y=Math.sin(a)*r;if(i===0)shape.moveTo(x,y);else shape.lineTo(x,y);}
-    this.puddleGeometry=new THREE.ShapeGeometry(shape,48);
+    this.puddleMaterial=new THREE.MeshPhysicalMaterial({color:'#d2bd66',transparent:true,opacity:.57,roughness:.07,metalness:.12,clearcoat:1,depthWrite:false,side:THREE.DoubleSide});
+    const puddleVertices=[0,0,1],puddleIndices=[],rings=4,edges=48;
+    for(let ring=1;ring<=rings;ring++)for(let j=0;j<edges;j++){
+      const a=j/edges*Math.PI*2,t=ring/rings,r=t*(1+Math.sin(a*3+.4)*.08+Math.cos(a*5)*.045);
+      puddleVertices.push(Math.cos(a)*r,Math.sin(a)*r,1-t*t);
+    }
+    for(let j=0;j<edges;j++)puddleIndices.push(0,1+j,1+(j+1)%edges);
+    for(let ring=1;ring<rings;ring++)for(let j=0;j<edges;j++){
+      const a=1+(ring-1)*edges+j,b=1+(ring-1)*edges+(j+1)%edges,c=a+edges,d=b+edges;
+      puddleIndices.push(a,c,b,b,c,d);
+    }
+    this.puddleGeometry=new THREE.BufferGeometry();
+    this.puddleGeometry.setAttribute('position',new THREE.Float32BufferAttribute(puddleVertices,3));
+    this.puddleGeometry.setIndex(puddleIndices);
+    this.puddleGeometry.computeVertexNormals();
     this.dropGeo=new THREE.SphereGeometry(1,6,5);
     const dropMat=new THREE.MeshPhysicalMaterial({color:'#e9d991',transparent:true,opacity:.65,roughness:.15,clearcoat:1,depthWrite:false});
     for(let i=0;i<90;i++){const mesh=new THREE.Mesh(this.dropGeo,dropMat);mesh.visible=false;mesh.castShadow=false;scene.add(mesh);this.drops.push({mesh,life:0,v:new THREE.Vector3()});}
@@ -38,28 +50,22 @@ export class Fluids {
   aim(trace,active){
     this.target.visible=active;
     if(!active)return;
-    this.target.position.set(trace.point.x,trace.point.y+.008,trace.point.z);
+    const landing=trace.kind==='bowl'?trace.point:resolvePuddlePoint(trace,TOILET,ROOM,COLLIDERS);
+    this.target.position.set(landing.x,landing.y+.012,landing.z);
     this.target.material.color.set(trace.kind==='bowl'?'#c9e9aa':'#f4eac7');
     this.target.rotation.set(-Math.PI/2,0,0);
-    if(trace.kind==='wall'){
-      if(Math.abs(trace.point.x)>3.4)this.target.rotation.set(0,Math.PI/2,0);
-      else this.target.rotation.set(0,0,0);
-    }
   }
-  addPuddle(hit,volume){
-    let x=hit.x,z=hit.z;
-    const dx=x-TOILET.x,dz=z-TOILET.z;
-    // Water that hits the outside ceramic runs down to the nearest floor edge.
-    if((dx/.57)**2+(dz/.76)**2<1.05){const len=Math.hypot(dx/.57,dz/.76)||1;x=TOILET.x+dx/len*1.2;z=TOILET.z+dz/len*1.2;}
-    x=THREE.MathUtils.clamp(x,ROOM.minX+.18,ROOM.maxX-.18);z=THREE.MathUtils.clamp(z,ROOM.minZ+.18,ROOM.maxZ-.18);
-    let nearest=null,distance=Infinity;
-    for(const p of this.puddles){const d=Math.hypot(x-p.x,z-p.z);if(d<distance){distance=d;nearest=p;}}
-    if(!nearest || (distance>Math.max(.29,nearest.radius*.75) && this.puddles.length<48)){
-      const mesh=new THREE.Mesh(this.puddleGeometry,this.puddleMaterial);mesh.rotation.x=-Math.PI/2;mesh.rotation.z=Math.random()*6;mesh.position.set(x,.045+this.puddles.length*.0001,z);mesh.renderOrder=2;this.scene.add(mesh);
-      nearest={mesh,x,z,volume:0,radius:.04,stretch:.75+Math.random()*.4};this.puddles.push(nearest);
+  addPuddle(impact,volume){
+    const landing=resolvePuddlePoint(impact,TOILET,ROOM,COLLIDERS);
+    const {pool,removed}=this.field.add(landing,volume);
+    for(const id of removed){const oldMesh=this.puddleMeshes.get(id);if(oldMesh)this.scene.remove(oldMesh);this.puddleMeshes.delete(id);}
+    let mesh=this.puddleMeshes.get(pool.id);
+    if(!mesh){
+      mesh=new THREE.Mesh(this.puddleGeometry,this.puddleMaterial);
+      mesh.rotation.set(-Math.PI/2,0,pool.id*2.39996);mesh.position.set(pool.x,pool.y,pool.z);mesh.renderOrder=2;
+      this.puddleMeshes.set(pool.id,mesh);this.scene.add(mesh);
     }
-    nearest.volume+=volume;nearest.radius=Math.min(1.6,Math.sqrt(.002+nearest.volume*.0017));
-    nearest.mesh.scale.set(nearest.radius,nearest.radius*nearest.stretch,1);
+    mesh.scale.set(pool.radius,pool.radius,pool.depth);
   }
   splash(hit,kind,time){
     if(time-this.splashTime<.045)return;this.splashTime=time;
@@ -72,7 +78,7 @@ export class Fluids {
       const r=this.ripples[this.rippleIndex++%this.ripples.length];r.life=.6;r.mesh.visible=true;r.mesh.position.set(hit.x,hit.y+.005,hit.z);r.mesh.scale.setScalar(.035);
     }
   }
-  clearFloor(){for(const p of this.puddles)this.scene.remove(p.mesh);this.puddles.length=0;}
+  clearFloor(){for(const mesh of this.puddleMeshes.values())this.scene.remove(mesh);this.puddleMeshes.clear();this.field.clear();}
   reset(){this.clearFloor();for(const d of this.drops){d.life=0;d.mesh.visible=false;}for(const r of this.ripples){r.life=0;r.mesh.visible=false;}}
   update(dt){
     for(const d of this.drops){if(d.life<=0)continue;d.life-=dt;d.v.y-=9.81*dt;d.mesh.position.addScaledVector(d.v,dt);if(d.life<=0||d.mesh.position.y<.025)d.mesh.visible=false;}

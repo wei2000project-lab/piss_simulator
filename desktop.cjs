@@ -54,10 +54,12 @@ ipcMain.handle('cursor-lock', (_, mode) => {
 });
 ipcMain.handle('cursor-unlock', () => { release(); return true; });
 ipcMain.handle('fullscreen', () => { release(); win.setFullScreen(!win.isFullScreen()); });
+ipcMain.handle('quit', () => { release(); win.close(); });
 if(singleInstance) app.whenReady().then(async () => {
   ({ server, url: app.gameUrl } = await startServer());
   Menu.setApplicationMenu(null);
-  win = new BrowserWindow({ width: 1440, height: 960, minWidth: 980, minHeight: 700, backgroundColor: '#f5f3eb', title: 'Porcelain Playground · 小事練習室', autoHideMenuBar: true, webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true } });
+  win = new BrowserWindow({ width: 1440, height: 960, minWidth: 980, minHeight: 700, fullscreen: true, show: false, backgroundColor: '#404b39', title: 'Porcelain Playground · 3D 尿尿模擬器', autoHideMenuBar: true, webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true } });
+  win.once('ready-to-show',()=>{win.show();win.focus();});
   win.webContents.on('before-input-event', (event, input) => {
     if (input.control && ['w', 'W'].includes(input.key)) {
       event.preventDefault();

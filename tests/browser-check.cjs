@@ -11,7 +11,7 @@ const path=require('node:path');
   try{
     await page.goto(url);await page.waitForFunction(()=>window.bathroomDebug,{timeout:30000});await page.waitForTimeout(2200);
     await page.screenshot({path:path.join(output,'01-welcome.png')});
-    await page.click('#start-button');await page.waitForTimeout(1000);
+    await page.waitForTimeout(1000);
     console.log('Initial:',JSON.stringify(await page.evaluate(()=>window.bathroomDebug.snapshot())));
     await page.screenshot({path:path.join(output,'02-playing.png')});
     console.log('Errors:',JSON.stringify(errors));

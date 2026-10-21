@@ -12,12 +12,18 @@ function cursorState(){
   const errors=[];let page;
   try{
     page=await app.firstWindow();page.on('pageerror',e=>errors.push(e.message));
-    await page.waitForFunction(()=>window.bathroomDebug,{timeout:30000});
-    await page.waitForFunction(()=>window.bathroomDebug.snapshot().state.nativeReady,{timeout:20000});
-    await page.screenshot({path:path.join(out,'03-desktop-welcome.png')});
-    await page.click('#start-button');await page.waitForTimeout(800);
+    await page.waitForFunction(()=>window.bathroomDebug,null,{timeout:30000});
+    await page.waitForFunction(()=>window.bathroomDebug.snapshot().state.nativeReady,null,{timeout:20000});
+    await page.waitForTimeout(800);
+    assert.equal(await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].isFullScreen()),true);
+    assert.equal(await page.locator('#start-button, #welcome, .sidebar, header, footer').count(),0);
+    const viewport=await page.evaluate(()=>({width:innerWidth,height:innerHeight}));
+    const canvasBox=await page.locator('#canvas-host').boundingBox();
+    assert.equal(canvasBox.x,0);assert.equal(canvasBox.y,0);assert.equal(canvasBox.width,viewport.width);assert.equal(canvasBox.height,viewport.height);
+    await page.screenshot({path:path.join(out,'09-fullscreen-autostart.png')});
     const snap=()=>page.evaluate(()=>{const s=window.bathroomDebug.snapshot();if(s.trace)delete s.trace.points;return s;});
-    const initial=await snap();console.log('Initial',JSON.stringify(initial));assert.equal(initial.trace.kind,'bowl');
+    const initial=await snap();console.log('Initial',JSON.stringify(initial));assert.equal(initial.state.started,true);assert.equal(initial.state.paused,false);assert.equal(initial.trace.kind,'bowl');
+    console.log('Automatic start, native fullscreen and edge-to-edge canvas passed');
     // Verify the actual Windows clipping rectangle, not a DOM approximation.
     await page.keyboard.press('Control');await page.waitForTimeout(250);
     const ctrl=cursorState();assert.equal(ctrl.right-ctrl.left,1);assert.equal(ctrl.bottom-ctrl.top,1);console.log('Ctrl native clip:',JSON.stringify(ctrl));
@@ -43,18 +49,28 @@ function cursorState(){
     await page.keyboard.press('f');console.log('Flush started:',JSON.stringify((await snap()).state));await page.waitForFunction(()=>window.bathroomDebug.snapshot().state.completed,null,{timeout:30000});console.log('Goal and flush passed');
     // Sidestep while retaining the same aim, then spill onto the actual floor.
     const startX=(await snap()).player.x;await page.keyboard.down('d');await page.waitForFunction(x=>window.bathroomDebug.snapshot().player.x>x+.9,startX,{timeout:15000});await page.keyboard.up('d');
-    await page.mouse.down();await page.waitForFunction(()=>window.bathroomDebug.snapshot().state.floor>60,{timeout:20000});await page.mouse.up();
+    await page.mouse.down();await page.waitForFunction(()=>window.bathroomDebug.snapshot().state.floor>70,null,{timeout:20000});
+    const firstPool=(await snap()).puddles[0];
+    await page.waitForFunction(()=>window.bathroomDebug.snapshot().state.floor>260,null,{timeout:20000});await page.mouse.up();
     await page.waitForFunction(()=>window.bathroomDebug.snapshot().pending===0,{timeout:10000});const spill=await snap();assert.ok(spill.puddleCount>0);console.log('Spill:',JSON.stringify(spill.state));
-    await page.screenshot({path:path.join(out,'05-desktop-puddles.png')});
+    assert.equal(spill.puddleCount,1);assert.equal(spill.puddles[0].id,firstPool.id);assert.equal(spill.puddles[0].x,firstPool.x);assert.equal(spill.puddles[0].z,firstPool.z);
+    assert.ok(spill.puddles[0].radius>firstPool.radius);assert.ok(Math.abs(spill.puddles[0].volume-spill.state.floor)<.001);
+    assert.ok(Math.hypot(spill.landingMarker[0]-spill.puddles[0].x,spill.landingMarker[2]-spill.puddles[0].z)<.03);
+    console.log('Stable growing puddle, conserved volume and matching landing marker passed');
+    await page.screenshot({path:path.join(out,'10-fixed-puddle.png')});
     await page.keyboard.press('c');assert.equal((await snap()).puddleCount,0);assert.equal((await snap()).state.floor,0);
     await page.keyboard.press('r');assert.equal((await snap()).state.reserve,1200);
     await page.keyboard.press('Escape');assert.equal((await snap()).state.paused,true);await page.click('#resume-button');assert.equal((await snap()).state.paused,false);
     await page.click('#help-button');assert.equal(await page.locator('#help-dialog').evaluate(el=>el.open),true);await page.click('#close-help');
-    await page.click('#reset-button');const reset=await snap();assert.equal(reset.state.total,0);assert.equal(reset.state.completed,false);assert.equal(reset.puddleCount,0);
+    await page.waitForFunction(()=>!window.bathroomDebug.snapshot().state.showHelp);
+    console.log('After help:',JSON.stringify((await snap()).state));
+    await page.keyboard.press('h');assert.equal(await page.locator('.mission').isVisible(),false);await page.keyboard.press('h');assert.equal(await page.locator('.mission').isVisible(),true);
+    await page.keyboard.press('Escape');await page.click('#reset-button');const reset=await snap();assert.equal(reset.state.total,0);assert.equal(reset.state.completed,false);assert.equal(reset.puddleCount,0);
     console.log('Clean, refill, pause, help and reset passed');console.log('Renderer errors:',JSON.stringify(errors));assert.deepEqual(errors,[]);
     // Confirm the UI remains usable at the minimum supported desktop size.
-    await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].setSize(1024,768));await page.waitForTimeout(500);
+    await app.evaluate(({BrowserWindow})=>{const w=BrowserWindow.getAllWindows()[0];w.setFullScreen(false);w.setSize(1024,768);});await page.waitForTimeout(500);
     await page.screenshot({path:path.join(out,'06-compact.png')});
+    await page.keyboard.press('Escape');await Promise.all([page.waitForEvent('close'),page.click('#quit-button')]);
     console.log('ALL DESKTOP CHECKS PASSED');
-  }finally{if(page&&!page.isClosed())await page.evaluate(()=>window.bathroomDesktop.unlock()).catch(()=>{});await app.close();}
+  }finally{if(page&&!page.isClosed())await page.evaluate(()=>window.bathroomDesktop.unlock()).catch(()=>{});await app.close().catch(()=>{});}
 })().catch(e=>{console.error(e);process.exitCode=1;});
