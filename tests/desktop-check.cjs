@@ -1,0 +1,60 @@
+const { _electron: electron }=require('C:/Users/weiwei/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
+const path=require('node:path'),fs=require('node:fs'),assert=require('node:assert/strict');
+const {execFileSync}=require('node:child_process');
+const root=path.resolve(__dirname,'..'),out=path.join(root,'artifacts');fs.mkdirSync(out,{recursive:true});
+function cursorState(){
+  const script="Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public class CursorTest { [StructLayout(LayoutKind.Sequential)] public struct R { public int L,T,Rt,B; } [StructLayout(LayoutKind.Sequential)] public struct P { public int X,Y; } [DllImport(\"user32.dll\")] public static extern bool GetClipCursor(out R r); [DllImport(\"user32.dll\")] public static extern bool GetCursorPos(out P p); }'; $r=New-Object CursorTest+R; $p=New-Object CursorTest+P; [void][CursorTest]::GetClipCursor([ref]$r); [void][CursorTest]::GetCursorPos([ref]$p); @{left=$r.L;top=$r.T;right=$r.Rt;bottom=$r.B;x=$p.X;y=$p.Y}|ConvertTo-Json -Compress";
+  return JSON.parse(execFileSync('powershell.exe',['-NoProfile','-Command',script],{encoding:'utf8',windowsHide:true}));
+}
+(async()=>{
+  const env={...process.env};delete env.ELECTRON_RUN_AS_NODE;
+  const app=await electron.launch({executablePath:path.join(root,'node_modules/electron/dist/electron.exe'),args:[root],env,timeout:30000});
+  const errors=[];let page;
+  try{
+    page=await app.firstWindow();page.on('pageerror',e=>errors.push(e.message));
+    await page.waitForFunction(()=>window.bathroomDebug,{timeout:30000});
+    await page.waitForFunction(()=>window.bathroomDebug.snapshot().state.nativeReady,{timeout:20000});
+    await page.screenshot({path:path.join(out,'03-desktop-welcome.png')});
+    await page.click('#start-button');await page.waitForTimeout(800);
+    const snap=()=>page.evaluate(()=>{const s=window.bathroomDebug.snapshot();if(s.trace)delete s.trace.points;return s;});
+    const initial=await snap();console.log('Initial',JSON.stringify(initial));assert.equal(initial.trace.kind,'bowl');
+    // Verify the actual Windows clipping rectangle, not a DOM approximation.
+    await page.keyboard.press('Control');await page.waitForTimeout(250);
+    const ctrl=cursorState();assert.equal(ctrl.right-ctrl.left,1);assert.equal(ctrl.bottom-ctrl.top,1);console.log('Ctrl native clip:',JSON.stringify(ctrl));
+    await page.keyboard.press('Control');await page.waitForTimeout(150);
+    const free=cursorState();assert.ok(free.right-free.left>1);assert.equal(free.x,ctrl.x);assert.equal(free.y,ctrl.y);console.log('Ctrl release:',JSON.stringify(free));
+    const box=await page.locator('#canvas-host').boundingBox();await page.mouse.move(box.x+box.width*.6,box.y+box.height*.6);const before=cursorState();
+    await page.mouse.down({button:'right'});await page.waitForTimeout(200);const right=cursorState();assert.equal(right.right-right.left,1);assert.equal(right.x,before.x);assert.equal(right.y,before.y);
+    const yaw=(await snap()).player.yaw;
+    const motion="Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public class MotionTest { [DllImport(\"user32.dll\")] public static extern void mouse_event(uint f,int x,int y,uint d,UIntPtr extra); }'; [MotionTest]::mouse_event(1,48,0,0,[UIntPtr]::Zero)";
+    execFileSync('powershell.exe',['-NoProfile','-Command',motion],{windowsHide:true});await page.waitForTimeout(200);
+    const movedYaw=(await snap()).player.yaw;assert.ok(Math.abs(movedYaw-yaw)>.02,'Raw Input must rotate the camera even while physically clipped');
+    execFileSync('powershell.exe',['-NoProfile','-Command',motion.replace('1,48,0','1,-48,0')],{windowsHide:true});await page.waitForTimeout(200);
+    console.log('Raw Input rotated camera:',yaw,'->',movedYaw,'->',(await snap()).player.yaw);
+    await page.mouse.up({button:'right'});await page.waitForTimeout(150);assert.ok(cursorState().right-cursorState().left>1);console.log('Right-click native clip:',JSON.stringify(right));
+    await page.keyboard.press('Control+w');await page.waitForTimeout(150);assert.ok(!page.isClosed());console.log('Ctrl+W intercepted');
+    await page.keyboard.down('Space');await page.waitForFunction(()=>window.bathroomDebug.snapshot().player.feet>.1,{timeout:5000});await page.keyboard.up('Space');
+    await page.waitForFunction(()=>window.bathroomDebug.snapshot().player.grounded,{timeout:10000});console.log('Jump and landing passed');
+    await page.mouse.move(box.x+box.width/2,box.y+box.height/2);await page.mouse.down();
+    await page.waitForFunction(()=>window.bathroomDebug.snapshot().state.caught>=320,null,{timeout:60000});await page.screenshot({path:path.join(out,'07-stream.png')});await page.mouse.up();
+    await page.waitForFunction(()=>window.bathroomDebug.snapshot().pending===0,{timeout:10000});
+    const hit=await snap();assert.ok(hit.state.caught>300);assert.ok(hit.state.floor<.01);assert.ok(hit.state.reserve<900);console.log('Bowl:',JSON.stringify(hit.state));
+    await page.screenshot({path:path.join(out,'04-desktop-hit.png')});
+    await page.keyboard.press('f');console.log('Flush started:',JSON.stringify((await snap()).state));await page.waitForFunction(()=>window.bathroomDebug.snapshot().state.completed,null,{timeout:30000});console.log('Goal and flush passed');
+    // Sidestep while retaining the same aim, then spill onto the actual floor.
+    const startX=(await snap()).player.x;await page.keyboard.down('d');await page.waitForFunction(x=>window.bathroomDebug.snapshot().player.x>x+.9,startX,{timeout:15000});await page.keyboard.up('d');
+    await page.mouse.down();await page.waitForFunction(()=>window.bathroomDebug.snapshot().state.floor>60,{timeout:20000});await page.mouse.up();
+    await page.waitForFunction(()=>window.bathroomDebug.snapshot().pending===0,{timeout:10000});const spill=await snap();assert.ok(spill.puddleCount>0);console.log('Spill:',JSON.stringify(spill.state));
+    await page.screenshot({path:path.join(out,'05-desktop-puddles.png')});
+    await page.keyboard.press('c');assert.equal((await snap()).puddleCount,0);assert.equal((await snap()).state.floor,0);
+    await page.keyboard.press('r');assert.equal((await snap()).state.reserve,1200);
+    await page.keyboard.press('Escape');assert.equal((await snap()).state.paused,true);await page.click('#resume-button');assert.equal((await snap()).state.paused,false);
+    await page.click('#help-button');assert.equal(await page.locator('#help-dialog').evaluate(el=>el.open),true);await page.click('#close-help');
+    await page.click('#reset-button');const reset=await snap();assert.equal(reset.state.total,0);assert.equal(reset.state.completed,false);assert.equal(reset.puddleCount,0);
+    console.log('Clean, refill, pause, help and reset passed');console.log('Renderer errors:',JSON.stringify(errors));assert.deepEqual(errors,[]);
+    // Confirm the UI remains usable at the minimum supported desktop size.
+    await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].setSize(1024,768));await page.waitForTimeout(500);
+    await page.screenshot({path:path.join(out,'06-compact.png')});
+    console.log('ALL DESKTOP CHECKS PASSED');
+  }finally{if(page&&!page.isClosed())await page.evaluate(()=>window.bathroomDesktop.unlock()).catch(()=>{});await app.close();}
+})().catch(e=>{console.error(e);process.exitCode=1;});
