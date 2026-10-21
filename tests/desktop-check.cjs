@@ -47,11 +47,24 @@ function cursorState(){
     const hit=await snap();assert.ok(hit.state.caught>300);assert.ok(hit.state.floor<.01);assert.ok(hit.state.reserve<900);console.log('Bowl:',JSON.stringify(hit.state));
     await page.screenshot({path:path.join(out,'04-desktop-hit.png')});
     await page.keyboard.press('f');console.log('Flush started:',JSON.stringify((await snap()).state));await page.waitForFunction(()=>window.bathroomDebug.snapshot().state.completed,null,{timeout:30000});console.log('Goal and flush passed');
+    assert.equal((await snap()).state.missionCollapsed,true);await page.waitForTimeout(350);
+    const folded=await page.locator('#mission-panel').boundingBox(),tab=await page.locator('#mission-toggle').boundingBox();
+    assert.ok(folded.x+folded.width<1);assert.ok(tab.x>=-.5);assert.equal(await page.locator('#mission-toggle').isVisible(),true);
+    await page.keyboard.press('Control');
+    await page.click('#mission-toggle');assert.equal((await snap()).state.missionCollapsed,false);await page.waitForTimeout(350);
+    await page.click('#mission-toggle');assert.equal((await snap()).state.missionCollapsed,true);await page.waitForTimeout(350);
+    await page.screenshot({path:path.join(out,'11-goal-collapsed.png')});
+    console.log('Automatic left collapse and manual expand/collapse passed');
     // Sidestep while retaining the same aim, then spill onto the actual floor.
     const startX=(await snap()).player.x;await page.keyboard.down('d');await page.waitForFunction(x=>window.bathroomDebug.snapshot().player.x>x+.9,startX,{timeout:15000});await page.keyboard.up('d');
-    await page.mouse.down();await page.waitForFunction(()=>window.bathroomDebug.snapshot().state.floor>70,null,{timeout:20000});
+    await page.mouse.down();await page.waitForFunction(()=>window.bathroomDebug.snapshot().pending>=3);
+    const airborne=await snap();assert.equal(airborne.state.floor,0);assert.ok(airborne.visibleSegments>1);
+    console.log('Visible independent segments precede floor deposition');
+    await page.waitForFunction(()=>window.bathroomDebug.snapshot().state.floor>70,null,{timeout:20000});
     const firstPool=(await snap()).puddles[0];
-    await page.waitForFunction(()=>window.bathroomDebug.snapshot().state.floor>260,null,{timeout:20000});await page.mouse.up();
+    await page.waitForFunction(()=>window.bathroomDebug.snapshot().state.floor>260,null,{timeout:20000});
+    await page.screenshot({path:path.join(out,'12-segmented-water.png')});await page.mouse.up();
+    const released=await snap();assert.ok(released.pending>0);assert.ok(released.visibleSegments>0);
     await page.waitForFunction(()=>window.bathroomDebug.snapshot().pending===0,{timeout:10000});const spill=await snap();assert.ok(spill.puddleCount>0);console.log('Spill:',JSON.stringify(spill.state));
     assert.equal(spill.puddleCount,1);assert.equal(spill.puddles[0].id,firstPool.id);assert.equal(spill.puddles[0].x,firstPool.x);assert.equal(spill.puddles[0].z,firstPool.z);
     assert.ok(spill.puddles[0].radius>firstPool.radius);assert.ok(Math.abs(spill.puddles[0].volume-spill.state.floor)<.001);
@@ -66,6 +79,7 @@ function cursorState(){
     console.log('After help:',JSON.stringify((await snap()).state));
     await page.keyboard.press('h');assert.equal(await page.locator('.mission').isVisible(),false);await page.keyboard.press('h');assert.equal(await page.locator('.mission').isVisible(),true);
     await page.keyboard.press('Escape');await page.click('#reset-button');const reset=await snap();assert.equal(reset.state.total,0);assert.equal(reset.state.completed,false);assert.equal(reset.puddleCount,0);
+    assert.equal(reset.state.missionCollapsed,false);assert.equal(await page.locator('#mission-toggle').isVisible(),false);
     console.log('Clean, refill, pause, help and reset passed');console.log('Renderer errors:',JSON.stringify(errors));assert.deepEqual(errors,[]);
     // Confirm the UI remains usable at the minimum supported desktop size.
     await app.evaluate(({BrowserWindow})=>{const w=BrowserWindow.getAllWindows()[0];w.setFullScreen(false);w.setSize(1024,768);});await page.waitForTimeout(500);

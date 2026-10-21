@@ -2,13 +2,14 @@ import * as THREE from 'three';
 import { createWorld, TOILET, ROOM, COLLIDERS } from './world.js';
 import { Fluids } from './fluids.js';
 import { BathroomAudio } from './audio.js';
-import { traceStream, movePlayer, standingHeight, FLOW_RATE, CAPACITY, GRAVITY } from './physics.js';
+import { traceStream, movePlayer, standingHeight, CAPACITY, GRAVITY } from './physics.js';
+import { WaterSimulation } from './water.js';
 
 const $=id=>document.getElementById(id);
 const desktop=window.bathroomDesktop;
-const state={started:false,paused:false,shooting:false,reserve:CAPACITY,total:0,caught:0,floor:0,bowl:0,flushed:0,flushTime:0,completed:false,lock:null,nativeReady:false,time:0,streamAge:0,showHelp:false};
+const state={started:false,paused:false,shooting:false,reserve:CAPACITY,total:0,caught:0,floor:0,bowl:0,flushed:0,flushTime:0,completed:false,missionCollapsed:false,lock:null,nativeReady:false,time:0,showHelp:false};
 const player={x:.02,z:-.78,feet:0,previousFeet:0,vy:0,yaw:.432,pitch:-.4,grounded:true};
-const keys=new Set(),pending=[];
+const keys=new Set(),water=new WaterSimulation(TOILET,ROOM,COLLIDERS);
 let renderer,scene,camera,world,fluids,audio,previousTime=0,lastHud=0,toastTimer,flowWasActive=false,lockSerial=0,gameFocused=document.hasFocus();
 const stage=$('stage'),host=$('canvas-host');
 function toast(message,duration=2600){$('toast').textContent=message;$('toast').classList.add('visible');clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').classList.remove('visible'),duration);}
@@ -40,7 +41,8 @@ function begin(){
   host.querySelector('canvas').focus();
 }
 function reset(){
-  stopInput();unlock();pending.length=0;fluids.reset();Object.assign(state,{reserve:CAPACITY,total:0,caught:0,floor:0,bowl:0,flushed:0,flushTime:0,completed:false,streamAge:0});
+  stopInput();unlock();water.clear();fluids.reset();Object.assign(state,{reserve:CAPACITY,total:0,caught:0,floor:0,bowl:0,flushed:0,flushTime:0,completed:false});
+  setMissionCollapsed(false);$('mission-toggle').hidden=true;
   Object.assign(player,{x:.02,z:-.78,feet:0,previousFeet:0,vy:0,yaw:.432,pitch:-.4,grounded:true});
   world.water.material.color.set('#aebfa0');world.water.position.y=TOILET.water;world.water.scale.set(1,1.35,1);world.water.material.opacity=.8;
   $('mission-title').textContent='對準馬桶，然後沖水。';$('mission-copy').textContent='讓 300 ml 進入馬桶，按 F 沖乾淨。';
@@ -73,15 +75,23 @@ function updateHud(){
 function completeGoal(){
   if(state.completed||state.caught<300||state.flushTime>0||state.flushed<300)return;
   state.completed=true;$('mission-title').textContent='今天的小事，完成了。';$('mission-copy').textContent=state.floor>1?'沖水完成！還可以按 C 整理地板。':'對準、放鬆、沖乾淨。做得很好。';
+  $('mission-toggle').hidden=false;setMissionCollapsed(true);
   toast('✓ 練習完成！每一件小事，都值得好好做。',5000);audio.chime();updateHud();
 }
-function streamTrace(){
+function setMissionCollapsed(collapsed){
+  state.missionCollapsed=collapsed;$('mission-panel').classList.toggle('mission-collapsed',collapsed);
+  $('mission-toggle').setAttribute('aria-expanded',String(!collapsed));
+  $('mission-toggle').textContent=collapsed?'✓ ›':'‹';$('mission-toggle').title=collapsed?'展開已完成的目標':'摺疊目標';
+  $('mission-content').inert=collapsed;$('mission-content').setAttribute('aria-hidden',String(collapsed));
+}
+function streamSource(){
   const direction=new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion);
   const right=new THREE.Vector3(1,0,0).applyQuaternion(camera.quaternion);
   const origin=camera.position.clone().addScaledVector(direction,.28).addScaledVector(right,.13);origin.y-=.63;
   const velocity=direction.multiplyScalar(4.7);velocity.y+=3.1;
-  return traceStream(origin,velocity,TOILET,ROOM,COLLIDERS);
+  return {origin,velocity};
 }
+function streamTrace(source=streamSource()){return traceStream(source.origin,source.velocity,TOILET,ROOM,COLLIDERS);}
 function updatePlayer(dt){
   const walk=(keys.has('ShiftLeft')||keys.has('ShiftRight'))?3.6:2.15;
   let forward=(keys.has('KeyW')||keys.has('ArrowUp')?1:0)-(keys.has('KeyS')||keys.has('ArrowDown')?1:0);
@@ -98,22 +108,20 @@ function updatePlayer(dt){
 }
 function updateGame(dt){
   updatePlayer(dt);
-  const trace=streamTrace(),shoot=state.shooting&&state.reserve>0;
-  if(shoot){
-    state.streamAge+=dt;const volume=Math.min(state.reserve,FLOW_RATE*dt);state.reserve-=volume;state.total+=volume;
-    pending.push({due:state.time+trace.time,volume,kind:trace.kind,point:{...trace.point},obstacle:trace.obstacle});
-    if(state.reserve<=0){state.shooting=false;toast('存量用完了，按 R 補充後再繼續。');}
-  }else state.streamAge=0;
-  // Each emitted parcel has its own flight time and destination. Moving away
-  // after release cannot redirect water that is already in the air.
-  for(let i=pending.length-1;i>=0;i--){const parcel=pending[i];if(parcel.due>state.time)continue;
-    if(parcel.kind==='bowl'){
-      state.caught+=parcel.volume;
-      if(state.flushTime>0)state.flushed+=parcel.volume;else state.bowl+=parcel.volume;
-    }else{state.floor+=parcel.volume;fluids.addPuddle(parcel,parcel.volume);}
-    fluids.splash(parcel.point,parcel.kind,state.time);pending.splice(i,1);
+  const source=streamSource(),trace=streamTrace(source),shoot=state.shooting&&state.reserve>0;
+  const result=water.advance(dt,shoot?source:null,state.reserve);
+  state.reserve=Math.max(0,state.reserve-result.emitted);state.total+=result.emitted;
+  if(shoot&&state.reserve<=0){state.shooting=false;toast('存量用完了，按 R 補充後再繼續。');}
+  // Counters, splashes and puddle pixels are all driven by the same physical
+  // contact event. No timer or live aim can place water ahead of its segment.
+  for(const impact of result.impacts){
+    if(impact.kind==='bowl'){
+      state.caught+=impact.volume;
+      if(state.flushTime>0)state.flushed+=impact.volume;else state.bowl+=impact.volume;
+    }else{state.floor+=impact.volume;fluids.addPuddle(impact,impact.volume);}
+    fluids.splash(impact.point,impact.kind,state.time);
   }
-  fluids.showStream(trace,state.time,shoot,state.streamAge);
+  fluids.showSegments(water.segments());
   fluids.aim(trace,true);fluids.update(dt);audio.flow(shoot,trace.kind==='bowl');
   $('crosshair').classList.toggle('on-target',trace.kind==='bowl');
   const aimMessage=trace.kind==='bowl'?'對準了 · 按住左鍵尿尿':trace.kind==='rim'?'碰到邊緣 · 地面圓圈是流下的積水位置':'淡色地面圓圈是積水位置';
@@ -141,6 +149,7 @@ function frame(time){
   if(time-lastHud>120){updateHud();lastHud=time;}
 }
 function bindEvents(){
+  $('mission-toggle').addEventListener('click',()=>setMissionCollapsed(!state.missionCollapsed));
   $('resume-button').addEventListener('click',()=>{audio.init();setPaused(false);});
   $('pause-button').addEventListener('click',()=>setPaused(!state.paused));
   $('flush-button').addEventListener('click',()=>{audio.init();setPaused(false);flush();});$('clean-button').addEventListener('click',()=>{setPaused(false);clean();});$('reset-button').addEventListener('click',reset);
@@ -191,7 +200,7 @@ try{
   renderer.shadowMap.autoUpdate=false;renderer.shadowMap.needsUpdate=true;
   // Read-only diagnostics are useful for checking the live simulation without
   // changing gameplay or exposing Electron/Node capabilities to the page.
-  window.bathroomDebug={snapshot:()=>({state:{...state},player:{...player},puddleCount:fluids.puddles.length,puddles:fluids.puddles.map(p=>({...p})),landingMarker:fluids.target.position.toArray(),pending:pending.length,trace:active()?streamTrace():null,drawCalls:renderer.info.render.calls,triangles:renderer.info.render.triangles})};
+  window.bathroomDebug={snapshot:()=>({state:{...state},player:{...player},puddleCount:fluids.puddles.length,puddles:fluids.puddles.map(p=>({...p})),patches:fluids.field.patches.map(p=>({...p})),waterSegments:water.segments(),visibleSegments:fluids.stream.count,landingMarker:fluids.target.position.toArray(),pending:water.parcels.length,trace:active()?streamTrace():null,drawCalls:renderer.info.render.calls,triangles:renderer.info.render.triangles})};
 }catch(error){
   console.error(error);$('loading').hidden=true;$('error-panel').hidden=false;$('error-panel').textContent='浴室暫時打不開。請確認顯示卡支援 WebGL 2，更新顯示驅動後重試。錯誤：'+error.message;
 }

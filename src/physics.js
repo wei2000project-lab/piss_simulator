@@ -19,49 +19,40 @@ function segmentBoxHit(start,end,box){
   }
   return enter;
 }
-export function traceStream(origin, velocity, toilet, room, obstacles) {
-  const points = [{ ...origin }];
-  let prev = origin, inBowl = false;
-  for (let i=1;i<=110;i++) {
-    const t=i*.012, p=pointAt(origin,velocity,t);
-    if (prev.y>toilet.seat && p.y<=toilet.seat) {
-      const fraction=(prev.y-toilet.seat)/(prev.y-p.y);
-      const cross={x:prev.x+(p.x-prev.x)*fraction,y:toilet.seat,z:prev.z+(p.z-prev.z)*fraction};
-      if (ellipseContains(cross.x,cross.z,toilet,toilet.innerX,toilet.innerZ)) inBowl=true;
-      else if(ellipseContains(cross.x,cross.z,toilet,toilet.outerX,toilet.outerZ)) {
-        points.push(cross); return {points,kind:'rim',point:cross,time:t};
-      }
-    }
-    if(inBowl && p.y<=toilet.water){
-      const f=(prev.y-toilet.water)/(prev.y-p.y),hit={x:prev.x+(p.x-prev.x)*f,y:toilet.water,z:prev.z+(p.z-prev.z)*f};
-      points.push(hit);return {points,kind:'bowl',point:hit,time:t};
-    }
-    if(!inBowl && p.y<toilet.seat && p.y>.22 && ellipseContains(p.x,p.z,toilet,toilet.outerX*.86,toilet.outerZ*.86)){
-      points.push(p);return {points,kind:'rim',point:p,time:t};
-    }
-    if(p.y<=.018){
-      const f=(prev.y-.018)/(prev.y-p.y),hit={x:prev.x+(p.x-prev.x)*f,y:.018,z:prev.z+(p.z-prev.z)*f};
-      points.push(hit);return {points,kind:'floor',point:hit,time:t};
-    }
-    if(p.x<room.minX+.03||p.x>room.maxX-.03||p.z<room.minZ+.03||p.z>room.maxZ-.03){
-      const hit={x:Math.max(room.minX+.04,Math.min(room.maxX-.04,p.x)),y:Math.max(.02,p.y),z:Math.max(room.minZ+.04,Math.min(room.maxZ-.04,p.z))};
-      points.push(hit);return {points,kind:'wall',point:hit,time:t};
-    }
-    let closest=null;
-    for(let j=0;j<obstacles.length;j++){
-      // The curved toilet bowl is handled above; the tank remains solid.
-      const b=obstacles[j];
-      if(b.toilet) continue;
-      const fraction=segmentBoxHit(prev,p,b);
-      if(fraction!==null&&(!closest||fraction<closest.fraction))closest={fraction,obstacle:j};
-    }
-    if(closest){
-      const f=closest.fraction,hit={x:prev.x+(p.x-prev.x)*f,y:prev.y+(p.y-prev.y)*f,z:prev.z+(p.z-prev.z)*f};
-      points.push(hit);return {points,kind:'object',point:hit,time:(i-1+f)*.012,obstacle:closest.obstacle};
-    }
-    points.push(p);prev=p;
+export function sweepWater(start,end,flight,toilet,room,obstacles){
+  let hit=null;
+  const offer=(kind,fraction,extra={})=>{
+    const f=Math.max(0,Math.min(1,fraction));
+    if(hit&&hit.fraction<=f)return;
+    hit={kind,fraction:f,point:{x:start.x+(end.x-start.x)*f,y:start.y+(end.y-start.y)*f,z:start.z+(end.z-start.z)*f},...extra};
+  };
+  if(start.y>toilet.seat&&end.y<=toilet.seat){
+    const f=(start.y-toilet.seat)/(start.y-end.y),x=start.x+(end.x-start.x)*f,z=start.z+(end.z-start.z)*f;
+    if(ellipseContains(x,z,toilet,toilet.innerX,toilet.innerZ))flight.inBowl=true;
+    else if(ellipseContains(x,z,toilet,toilet.outerX,toilet.outerZ))offer('rim',f);
   }
-  return {points,kind:'floor',point:points.at(-1),time:1.32};
+  if(flight.inBowl&&end.y<=toilet.water&&start.y>toilet.water)offer('bowl',(start.y-toilet.water)/(start.y-end.y));
+  if(!flight.inBowl&&end.y<toilet.seat&&end.y>.22&&ellipseContains(end.x,end.z,toilet,toilet.outerX*.86,toilet.outerZ*.86))offer('rim',1);
+  if(end.y<=.018)offer('floor',start.y>.018?(start.y-.018)/(start.y-end.y):0);
+  for(const [axis,min,max] of [['x',room.minX+.03,room.maxX-.03],['z',room.minZ+.03,room.maxZ-.03]]){
+    if(end[axis]<min)offer('wall',start[axis]>=min?(min-start[axis])/(end[axis]-start[axis]):0);
+    if(end[axis]>max)offer('wall',start[axis]<=max?(max-start[axis])/(end[axis]-start[axis]):0);
+  }
+  for(let j=0;j<obstacles.length;j++){
+    if(obstacles[j].toilet)continue;
+    const fraction=segmentBoxHit(start,end,obstacles[j]);
+    if(fraction!==null)offer('object',fraction,{obstacle:j});
+  }
+  return hit;
+}
+export function traceStream(origin,velocity,toilet,room,obstacles){
+  const points=[{...origin}],flight={inBowl:false};let previous=origin;
+  for(let i=1;i<=300;i++){
+    const point=pointAt(origin,velocity,i*.012),hit=sweepWater(previous,point,flight,toilet,room,obstacles);
+    if(hit){points.push(hit.point);return {...hit,points,time:(i-1+hit.fraction)*.012};}
+    points.push(point);previous=point;
+  }
+  return {points,kind:'floor',point:points.at(-1),time:3.6};
 }
 export function movePlayer(player, dx, dz, radius, room, obstacles) {
   const blocks=(x,z)=>obstacles.some(b=>player.feet<b.height-.04 && x+radius>b.minX&&x-radius<b.maxX&&z+radius>b.minZ&&z-radius<b.maxZ);
