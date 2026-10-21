@@ -23,6 +23,7 @@ function cursorState(){
     await page.screenshot({path:path.join(out,'09-fullscreen-autostart.png')});
     const snap=()=>page.evaluate(()=>{const s=window.bathroomDebug.snapshot();if(s.trace)delete s.trace.points;return s;});
     const initial=await snap();console.log('Initial',JSON.stringify(initial));assert.equal(initial.state.started,true);assert.equal(initial.state.paused,false);assert.equal(initial.trace.kind,'bowl');
+    assert.equal(initial.emissionRate,60);
     console.log('Automatic start, native fullscreen and edge-to-edge canvas passed');
     // Verify the actual Windows clipping rectangle, not a DOM approximation.
     await page.keyboard.press('Control');await page.waitForTimeout(250);
@@ -81,6 +82,37 @@ function cursorState(){
     await page.keyboard.press('Escape');await page.click('#reset-button');const reset=await snap();assert.equal(reset.state.total,0);assert.equal(reset.state.completed,false);assert.equal(reset.puddleCount,0);
     assert.equal(reset.state.missionCollapsed,false);assert.equal(await page.locator('#mission-toggle').isVisible(),false);
     console.log('Clean, refill, pause, help and reset passed');console.log('Renderer errors:',JSON.stringify(errors));assert.deepEqual(errors,[]);
+    // Navigate using the same keys and native relative motion as the player.
+    await page.keyboard.press('Control');
+    const turn=async(yaw,pitch)=>{
+      const p=(await snap()).player,dx=Math.round((p.yaw-yaw)/.0022),dy=Math.round((p.pitch-pitch)/.0022);
+      const command="Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public class TurnTest { [DllImport(\"user32.dll\")] public static extern void mouse_event(uint f,int x,int y,uint d,UIntPtr extra); }'; [TurnTest]::mouse_event(1,"+dx+","+dy+",0,[UIntPtr]::Zero)";
+      execFileSync('powershell.exe',['-NoProfile','-Command',command],{windowsHide:true});await page.waitForTimeout(150);
+    };
+    await turn(Math.PI,-.18);
+    await page.keyboard.down('a');await page.waitForFunction(()=>window.bathroomDebug.snapshot().player.x>.45);await page.keyboard.up('a');
+    await page.keyboard.down('Shift');await page.keyboard.down('w');await page.waitForFunction(()=>window.bathroomDebug.snapshot().player.z>3.1);await page.keyboard.up('w');await page.keyboard.up('Shift');
+    assert.equal((await snap()).door.near,true);assert.match(await page.locator('#hint').innerText(),/開門/);
+    await page.keyboard.down('w');await page.waitForTimeout(650);await page.keyboard.up('w');assert.ok((await snap()).player.z<3.9);
+    await page.keyboard.press('f');await page.waitForFunction(()=>Math.abs(window.bathroomDebug.snapshot().door.angle)>1.5);
+    assert.equal((await snap()).state.flushTime,0);await page.screenshot({path:path.join(out,'13-door-open.png')});
+    await page.keyboard.down('w');await page.waitForFunction(()=>window.bathroomDebug.snapshot().player.z>6.3);await page.keyboard.up('w');
+    assert.equal((await snap()).area,'客廳');await page.waitForFunction(()=>document.getElementById('area-name').textContent==='客廳');
+    await page.screenshot({path:path.join(out,'14-living-room.png')});
+    const floorBefore=(await snap()).state.floor;await page.mouse.move(box.width/2,box.height/2);await page.mouse.down();
+    await page.waitForFunction(v=>window.bathroomDebug.snapshot().state.floor>v+40,floorBefore,{timeout:20000});
+    await page.screenshot({path:path.join(out,'16-living-room-water.png')});await page.mouse.up();
+    await page.waitForFunction(()=>window.bathroomDebug.snapshot().pending===0);
+    assert.ok((await snap()).puddles.some(p=>p.z>4.2));await page.keyboard.press('c');
+    await page.keyboard.down('s');await page.waitForFunction(()=>window.bathroomDebug.snapshot().player.z<5.5);await page.keyboard.up('s');
+    await page.keyboard.press('f');await page.waitForFunction(()=>Math.abs(window.bathroomDebug.snapshot().door.angle)<.01);
+    await turn(0,-.18);await page.screenshot({path:path.join(out,'15-door-closed-from-living.png')});
+    await page.keyboard.down('w');await page.waitForTimeout(750);await page.keyboard.up('w');assert.ok((await snap()).player.z>4.25);
+    await page.keyboard.press('f');await page.waitForFunction(()=>Math.abs(window.bathroomDebug.snapshot().door.angle)>1.5);
+    await page.keyboard.down('w');await page.waitForFunction(()=>window.bathroomDebug.snapshot().player.z<3.1);await page.keyboard.up('w');
+    assert.equal((await snap()).area,'浴室');await page.keyboard.press('Control');
+    console.log('60 segments/sec, F interaction, blocked closed door, round-trip room navigation and living-room water passed');
+    assert.deepEqual(errors,[]);
     // Confirm the UI remains usable at the minimum supported desktop size.
     await app.evaluate(({BrowserWindow})=>{const w=BrowserWindow.getAllWindows()[0];w.setFullScreen(false);w.setSize(1024,768);});await page.waitForTimeout(500);
     await page.screenshot({path:path.join(out,'06-compact.png')});

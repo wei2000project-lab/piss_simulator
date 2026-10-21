@@ -1,4 +1,5 @@
 // Stable world-space accumulation, shared by the marker and the simulation.
+import { footprintContains, footprintExits } from './collision.js';
 const clamp=(value,min,max)=>Math.max(min,Math.min(max,value));
 export function resolvePuddlePoint(impact,toilet,room,obstacles){
   let {x,z}=impact.point;
@@ -12,15 +13,9 @@ export function resolvePuddlePoint(impact,toilet,room,obstacles){
   // drawn underneath the fixture. Direct floor hits retain their exact point.
   if(impact.kind==='object'||impact.kind==='rim'){
     for(let pass=0;pass<obstacles.length+1;pass++){
-      const box=obstacles.find(b=>x>b.minX-.025&&x<b.maxX+.025&&z>b.minZ-.025&&z<b.maxZ+.025);
+      const box=obstacles.find(b=>(b.minY??0)<.05&&footprintContains({x,z},b,.025));
       if(!box)break;
-      const exits=[
-        {x:box.minX-.065,z,d:Math.abs(x-box.minX)},
-        {x:box.maxX+.065,z,d:Math.abs(x-box.maxX)},
-        {x,z:box.minZ-.065,d:Math.abs(z-box.minZ)},
-        {x,z:box.maxZ+.065,d:Math.abs(z-box.maxZ)},
-      ].filter(p=>p.x>room.minX+.04&&p.x<room.maxX-.04&&p.z>room.minZ+.04&&p.z<room.maxZ-.04);
-      exits.sort((a,b)=>a.d-b.d);
+      const exits=footprintExits({x,z},box,room);
       if(!exits.length)break;
       ({x,z}=exits[0]);
     }

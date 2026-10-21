@@ -1,4 +1,5 @@
 // Shared deterministic simulation, independent of WebGL and the user interface.
+import { segmentBoxHit, circleHitsBox } from './collision.js';
 export const GRAVITY = 9.81;
 export const FLOW_RATE = 92; // millilitres per second
 export const CAPACITY = 1200;
@@ -7,17 +8,6 @@ export function ellipseContains(x, z, center, radiusX, radiusZ) {
 }
 export function pointAt(origin, velocity, t) {
   return { x: origin.x+velocity.x*t, y: origin.y+velocity.y*t-GRAVITY*t*t/2, z: origin.z+velocity.z*t };
-}
-function segmentBoxHit(start,end,box){
-  let enter=0,exit=1;
-  for(const [axis,min,max] of [['x',box.minX,box.maxX],['y',0,box.height],['z',box.minZ,box.maxZ]]){
-    const delta=end[axis]-start[axis];
-    if(Math.abs(delta)<1e-10){if(start[axis]<min||start[axis]>max)return null;continue;}
-    const first=(min-start[axis])/delta,last=(max-start[axis])/delta;
-    enter=Math.max(enter,Math.min(first,last));exit=Math.min(exit,Math.max(first,last));
-    if(enter>exit)return null;
-  }
-  return enter;
 }
 export function sweepWater(start,end,flight,toilet,room,obstacles){
   let hit=null;
@@ -55,7 +45,7 @@ export function traceStream(origin,velocity,toilet,room,obstacles){
   return {points,kind:'floor',point:points.at(-1),time:3.6};
 }
 export function movePlayer(player, dx, dz, radius, room, obstacles) {
-  const blocks=(x,z)=>obstacles.some(b=>player.feet<b.height-.04 && x+radius>b.minX&&x-radius<b.maxX&&z+radius>b.minZ&&z-radius<b.maxZ);
+  const blocks=(x,z)=>obstacles.some(b=>player.feet<b.height-.04&&player.feet+1.72>(b.minY??0)&&circleHitsBox(x,z,radius,b));
   // Substeps prevent Shift movement from tunnelling through a narrow collider.
   const steps=Math.max(1,Math.ceil(Math.hypot(dx,dz)/.09));
   for(let i=0;i<steps;i++){
@@ -67,6 +57,6 @@ export function movePlayer(player, dx, dz, radius, room, obstacles) {
 }
 export function standingHeight(player, obstacles) {
   let height=0;
-  for(const b of obstacles) if(player.x>b.minX-.12&&player.x<b.maxX+.12&&player.z>b.minZ-.12&&player.z<b.maxZ+.12&&player.previousFeet>=b.height-.025) height=Math.max(height,b.height);
+  for(const b of obstacles) if(circleHitsBox(player.x,player.z,.12,b)&&player.previousFeet>=b.height-.025) height=Math.max(height,b.height);
   return height;
 }

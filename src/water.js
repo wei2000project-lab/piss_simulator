@@ -1,7 +1,7 @@
 import { FLOW_RATE, GRAVITY, pointAt, sweepWater } from './physics.js';
 import { resolvePuddlePoint } from './puddles.js';
 
-export const EMISSION_INTERVAL=.025;
+export const EMISSION_INTERVAL=1/60;
 const copySource=source=>({origin:{...source.origin},velocity:{...source.velocity}});
 const lerpPoint=(a,b,t)=>({x:a.x+(b.x-a.x)*t,y:a.y+(b.y-a.y)*t,z:a.z+(b.z-a.z)*t});
 

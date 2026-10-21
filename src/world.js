@@ -2,17 +2,10 @@ import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { Reflector } from 'three/addons/objects/Reflector.js';
-
-export const TOILET = { x: -0.82, z: -2.65, seat: 0.72, water: 0.39, innerX: 0.345, innerZ: 0.49, outerX: 0.51, outerZ: 0.69 };
-export const ROOM = { minX: -3.5, maxX: 3.5, minZ: -4, maxZ: 4 };
-export const COLLIDERS = [
-  { minX: -1.37, maxX: -.27, minZ: -3.62, maxZ: -1.91, height: .76, toilet: true },
-  { minX: -3.5, maxX: -2.48, minZ: -2.92, maxZ: -1.35, height: 1.08 },
-  { minX: 1.73, maxX: 3.2, minZ: -2.78, maxZ: .22, height: .75 },
-  { minX: 2.05, maxX: 2.93, minZ: -3.87, maxZ: -3.07, height: .78 },
-  { minX: -3.2, maxX: -2.48, minZ: .7, maxZ: 2.3, height: .65 },
-  { minX: -1.26, maxX: -.38, minZ: -3.48, maxZ: -3.15, height: 1.42 },
-];
+import { TOILET, DOOR_CONTROLLER } from './spaces.js';
+import { DOOR } from './door.js';
+import { createLivingRoom } from './living-room.js';
+export { TOILET, ROOM, COLLIDERS } from './spaces.js';
 
 export function createWorld(scene, renderer) {
   const pmrem = new THREE.PMREMGenerator(renderer);
@@ -70,13 +63,23 @@ export function createWorld(scene, renderer) {
   box(0, .065, -3.91, 7, .13, .065, materials.ivory, .01);
   box(-3.44, .065, 0, .07, .13, 8, materials.ivory, .01);
   box(3.44, .065, 0, .07, .13, 8, materials.ivory, .01);
-  // The near wall has an oak door, completing a walkable enclosed room.
-  box(0, 1.7, 4.08, 7.2, 3.4, .16, materials.wall);
-  box(.45, 1.18, 3.97, 1.25, 2.36, .08, materials.wood);
+  // A real opening connects the rooms; there is no solid wall behind the door.
+  box(-1.84,1.7,4.07,3.32,3.4,.2,materials.wall);
+  box(2.29,1.7,4.07,2.42,3.4,.2,materials.wall);
+  box(.45,2.89,4.07,1.26,1.02,.2,materials.wall);
   for (const x of [-.22, 1.12]) box(x, 1.2, 3.89, .08, 2.5, .12, materials.ivory);
   box(.45, 2.43, 3.89, 1.42, .08, .12, materials.ivory);
-  cylinder(.93, 1.08, 3.86, .04, .08, materials.brass).rotation.x = Math.PI / 2;
-  box(.86, 1.08, 3.8, .2, .028, .04, materials.brass);
+  for(const x of [-.22,1.12])box(x,1.2,4.23,.08,2.5,.12,materials.ivory);
+  box(.45,2.43,4.23,1.42,.08,.12,materials.ivory);
+  const doorPivot=new THREE.Group();doorPivot.position.set(DOOR.hingeX,0,DOOR.z);scene.add(doorPivot);
+  const doorPart=part=>{doorPivot.add(part);return part;};
+  doorPart(box(DOOR.width/2,1.19,0,DOOR.width,2.36,DOOR.thickness,materials.wood,.025));
+  for(const side of [-1,1]){
+    const handle=doorPart(cylinder(DOOR.width-.14,1.08,side*.052,.038,.038,materials.brass));handle.rotation.x=Math.PI/2;
+    doorPart(box(DOOR.width-.21,1.08,side*.079,.2,.027,.035,materials.brass,.008));
+  }
+  for(const y of [.42,1.9])doorPart(cylinder(0,y,0,.025,.12,materials.brass));
+  DOOR_CONTROLLER.reset();
 
   // White porcelain toilet, with an actual open bowl and water surface.
   const { x: tx, z: tz } = TOILET;
@@ -163,7 +166,12 @@ export function createWorld(scene, renderer) {
   box(-2.92,.66,1.77,.46,.08,.49,materials.ivory,.035);
   box(-3.41,1.7,.5,.06,.045,1.1,materials.brass);
   box(-3.3,1.48,.57,.025,.45,.55,materials.cloth,.01);
-  return { water, tubWater, sunlight, environment, materials, mirror };
+  createLivingRoom(scene,{mesh,box,cylinder,pipe,materials,shadow:(...args)=>contactShadow(scene,...args)});
+  return {
+    water,tubWater,sunlight,environment,materials,mirror,door:DOOR_CONTROLLER,
+    update(dt,player){const changed=DOOR_CONTROLLER.step(dt,player);doorPivot.rotation.y=DOOR_CONTROLLER.angle;if(changed)renderer.shadowMap.needsUpdate=true;},
+    resetDoor(){DOOR_CONTROLLER.reset();doorPivot.rotation.y=0;renderer.shadowMap.needsUpdate=true;},
+  };
 }
 
 function canvas(w,h,paint){const c=document.createElement('canvas');c.width=w;c.height=h;paint(c.getContext('2d'));return c;}

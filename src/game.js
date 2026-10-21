@@ -3,14 +3,15 @@ import { createWorld, TOILET, ROOM, COLLIDERS } from './world.js';
 import { Fluids } from './fluids.js';
 import { BathroomAudio } from './audio.js';
 import { traceStream, movePlayer, standingHeight, CAPACITY, GRAVITY } from './physics.js';
-import { WaterSimulation } from './water.js';
+import { WaterSimulation, EMISSION_INTERVAL } from './water.js';
+import { roomName } from './spaces.js';
 
 const $=id=>document.getElementById(id);
 const desktop=window.bathroomDesktop;
 const state={started:false,paused:false,shooting:false,reserve:CAPACITY,total:0,caught:0,floor:0,bowl:0,flushed:0,flushTime:0,completed:false,missionCollapsed:false,lock:null,nativeReady:false,time:0,showHelp:false};
 const player={x:.02,z:-.78,feet:0,previousFeet:0,vy:0,yaw:.432,pitch:-.4,grounded:true};
 const keys=new Set(),water=new WaterSimulation(TOILET,ROOM,COLLIDERS);
-let renderer,scene,camera,world,fluids,audio,previousTime=0,lastHud=0,toastTimer,flowWasActive=false,lockSerial=0,gameFocused=document.hasFocus();
+let renderer,scene,camera,world,fluids,audio,previousTime=0,lastHud=0,toastTimer,flowWasActive=false,lockSerial=0,gameFocused=document.hasFocus(),doorWasBlocked=false;
 const stage=$('stage'),host=$('canvas-host');
 function toast(message,duration=2600){$('toast').textContent=message;$('toast').classList.add('visible');clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').classList.remove('visible'),duration);}
 function active(){return state.started&&!state.paused&&!state.showHelp;}
@@ -44,11 +45,19 @@ function reset(){
   stopInput();unlock();water.clear();fluids.reset();Object.assign(state,{reserve:CAPACITY,total:0,caught:0,floor:0,bowl:0,flushed:0,flushTime:0,completed:false});
   setMissionCollapsed(false);$('mission-toggle').hidden=true;
   Object.assign(player,{x:.02,z:-.78,feet:0,previousFeet:0,vy:0,yaw:.432,pitch:-.4,grounded:true});
+  world.resetDoor();doorWasBlocked=false;
   world.water.material.color.set('#aebfa0');world.water.position.y=TOILET.water;world.water.scale.set(1,1.35,1);world.water.material.opacity=.8;
   $('mission-title').textContent='對準馬桶，然後沖水。';$('mission-copy').textContent='讓 300 ml 進入馬桶，按 F 沖乾淨。';
   if(state.started)setPaused(false);toast('新的小練習，慢慢來就好。');updateHud();
 }
 function nearToilet(){return Math.hypot(player.x-TOILET.x,player.z-TOILET.z)<2.3;}
+function interact(){
+  if(!active())return;
+  if(world.door.near(player)){
+    world.door.toggle(player);toast(world.door.targetOpen?'正在開門，可以前往'+(roomName(player)==='浴室'?'客廳':'浴室')+'。':'正在關門。');
+  }else if(nearToilet())flush();
+  else toast('靠近浴室門按 F 開關門；靠近馬桶按 F 沖水。');
+}
 function flush(){
   if(!state.started){toast('先走進浴室，再開始練習。');return;}
   if(state.paused||state.showHelp)return;
@@ -63,6 +72,7 @@ function clean(){
 }
 function refill(){if(!active())return;state.reserve=CAPACITY;toast('補給完成，1,200 ml 的新機會。');updateHud();}
 function updateHud(){
+  $('area-name').textContent=roomName(player);
   const percent=state.total>0?Math.round(state.caught/state.total*100):0;
   $('accuracy').textContent=state.total>.5?percent:'—';
   $('in-volume').textContent=Math.round(state.caught).toLocaleString();$('floor-volume').textContent=Math.round(state.floor).toLocaleString();
@@ -107,6 +117,9 @@ function updatePlayer(dt){
   camera.position.set(player.x,1.64+player.feet+bob,player.z);camera.rotation.order='YXZ';camera.rotation.set(player.pitch,player.yaw,0);
 }
 function updateGame(dt){
+  world.update(dt,player);
+  if(world.door.blocked&&!doorWasBlocked)toast('門口有人，先讓開一點再開關門。');
+  doorWasBlocked=world.door.blocked;
   updatePlayer(dt);
   const source=streamSource(),trace=streamTrace(source),shoot=state.shooting&&state.reserve>0;
   const result=water.advance(dt,shoot?source:null,state.reserve);
@@ -126,7 +139,9 @@ function updateGame(dt){
   $('crosshair').classList.toggle('on-target',trace.kind==='bowl');
   const aimMessage=trace.kind==='bowl'?'對準了 · 按住左鍵尿尿':trace.kind==='rim'?'碰到邊緣 · 地面圓圈是流下的積水位置':'淡色地面圓圈是積水位置';
   if($('aim-label').textContent!==aimMessage)$('aim-label').textContent=aimMessage;
-  $('hint').hidden=!nearToilet()||state.flushTime>0||state.bowl<5;
+  const atDoor=world.door.near(player);
+  $('hint').hidden=!atDoor&&(!nearToilet()||state.flushTime>0||state.bowl<5);
+  $('hint').querySelector('span').textContent=atDoor?(world.door.targetOpen?'關門':'開門 · '+(roomName(player)==='浴室'?'客廳':'浴室')):'沖水';
   if(state.flushTime>0){
     state.flushTime=Math.max(0,state.flushTime-dt);const progress=1-state.flushTime/3.2;
     const shrink=1-Math.sin(progress*Math.PI)*.72;world.water.scale.set(shrink,shrink*1.35,1);
@@ -180,7 +195,7 @@ function bindEvents(){
     if(event.repeat)return;
     if(event.code==='KeyH')document.body.classList.toggle('hud-is-hidden');
     if(event.code==='Space'&&player.grounded){player.vy=4.35;player.grounded=false;}
-    if(event.code==='KeyF')flush();if(event.code==='KeyC')clean();if(event.code==='KeyR')refill();
+    if(event.code==='KeyF')interact();if(event.code==='KeyC')clean();if(event.code==='KeyR')refill();
   });
   window.addEventListener('keyup',event=>keys.delete(event.code));
   window.addEventListener('focus',()=>{gameFocused=true;});
@@ -200,7 +215,7 @@ try{
   renderer.shadowMap.autoUpdate=false;renderer.shadowMap.needsUpdate=true;
   // Read-only diagnostics are useful for checking the live simulation without
   // changing gameplay or exposing Electron/Node capabilities to the page.
-  window.bathroomDebug={snapshot:()=>({state:{...state},player:{...player},puddleCount:fluids.puddles.length,puddles:fluids.puddles.map(p=>({...p})),patches:fluids.field.patches.map(p=>({...p})),waterSegments:water.segments(),visibleSegments:fluids.stream.count,landingMarker:fluids.target.position.toArray(),pending:water.parcels.length,trace:active()?streamTrace():null,drawCalls:renderer.info.render.calls,triangles:renderer.info.render.triangles})};
+  window.bathroomDebug={snapshot:()=>({state:{...state},player:{...player},area:roomName(player),door:{angle:world.door.angle,targetOpen:world.door.targetOpen,blocked:world.door.blocked,near:world.door.near(player)},emissionRate:1/EMISSION_INTERVAL,emittedSegments:water.nextId,puddleCount:fluids.puddles.length,puddles:fluids.puddles.map(p=>({...p})),patches:fluids.field.patches.map(p=>({...p})),waterSegments:water.segments(),visibleSegments:fluids.stream.count,landingMarker:fluids.target.position.toArray(),pending:water.parcels.length,trace:active()?streamTrace():null,drawCalls:renderer.info.render.calls,triangles:renderer.info.render.triangles})};
 }catch(error){
   console.error(error);$('loading').hidden=true;$('error-panel').hidden=false;$('error-panel').textContent='浴室暫時打不開。請確認顯示卡支援 WebGL 2，更新顯示驅動後重試。錯誤：'+error.message;
 }

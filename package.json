@@ -8,7 +8,7 @@
   "scripts": {
     "start": "electron .",
     "web": "node server.cjs",
-    "test": "node --test tests/physics.test.mjs tests/puddles.test.mjs tests/water.test.mjs tests/server.test.cjs",
+    "test": "node --test tests/physics.test.mjs tests/puddles.test.mjs tests/water.test.mjs tests/door.test.mjs tests/server.test.cjs",
     "check": "node --check desktop.cjs && node --check preload.cjs && node --check server.cjs && node --check src/game.js"
   },
   "dependencies": {

@@ -24,7 +24,7 @@
     <section id="mission-panel" class="game-hud mission" aria-label="遊戲目標與數據">
       <button id="mission-toggle" class="mission-toggle" aria-controls="mission-content" aria-expanded="true" title="摺疊目標" hidden>‹</button>
       <div id="mission-content">
-      <div class="hud-label">小目標 <span id="goal-text">0 / 300 ml</span></div>
+      <div class="hud-label"><span>小目標 · <span id="area-name">浴室</span></span><span id="goal-text">0 / 300 ml</span></div>
       <h1 id="mission-title">對準馬桶，然後沖水。</h1>
       <p id="mission-copy">讓 300 ml 進入馬桶，按 F 沖乾淨。</p>
       <div class="progress-track"><div id="goal-progress"></div></div>
@@ -46,7 +46,7 @@
 
     <div class="game-hud controls">
       <div id="lock-status">滑鼠自由 · 按住右鍵轉向</div>
-      <div class="key-guide"><span><kbd>WASD</kbd> 移動</span><span><kbd>空白</kbd> 跳躍</span><span>左鍵 尿尿</span><span>右鍵 轉向</span><span><kbd>Ctrl</kbd> 鎖定</span><span><kbd>F</kbd> 沖水</span><span><kbd>C</kbd> 擦地</span><span><kbd>R</kbd> 補給</span><span><kbd>H</kbd> 隱藏介面</span></div>
+      <div class="key-guide"><span><kbd>WASD</kbd> 移動</span><span><kbd>空白</kbd> 跳躍</span><span>左鍵 尿尿</span><span>右鍵 轉向</span><span><kbd>Ctrl</kbd> 鎖定</span><span><kbd>F</kbd> 開關門／沖水</span><span><kbd>C</kbd> 擦地</span><span><kbd>R</kbd> 補給</span><span><kbd>H</kbd> 隱藏介面</span></div>
     </div>
     <div class="game-hud supply"><div class="hud-label">補給 <span id="tank-label">1,200 ml</span></div><div class="tank-track"><div id="tank-fill"></div></div></div>
 
@@ -59,7 +59,7 @@
     </section></div>
 
     <dialog id="help-dialog"><button id="close-help" class="close-dialog" aria-label="關閉說明">×</button><div class="eyebrow">操作說明</div><h2>對準，就這樣。</h2>
-      <dl><dt>W / A / S / D</dt><dd>自由移動，Shift 加速。</dd><dt>左鍵</dt><dd>按住發射分段水柱；放開後，已射出的水繼續下落。</dd><dt>右鍵</dt><dd>按住轉向，真實固定滑鼠在當前位置。</dd><dt>Ctrl</dt><dd>切換視角鎖定；鎖定與解除時游標回到中央。</dd><dt>Space</dt><dd>跳躍。</dd><dt>F / C / R</dt><dd>沖水／整理地板／補給。</dd><dt>H</dt><dd>隱藏或顯示遊戲介面；完成後可用左側按鈕展開目標。</dd><dt>Esc / F11</dt><dd>暫停／切換全螢幕。</dd></dl>
+      <dl><dt>W / A / S / D</dt><dd>自由移動，Shift 加速。</dd><dt>左鍵</dt><dd>按住發射分段水柱；放開後，已射出的水繼續下落。</dd><dt>右鍵</dt><dd>按住轉向，真實固定滑鼠在當前位置。</dd><dt>Ctrl</dt><dd>切換視角鎖定；鎖定與解除時游標回到中央。</dd><dt>Space</dt><dd>跳躍。</dd><dt>F / C / R</dt><dd>靠近門開關門、靠近馬桶沖水／整理地板／補給。</dd><dt>H</dt><dd>隱藏或顯示遊戲介面；完成後可用左側按鈕展開目標。</dd><dt>Esc / F11</dt><dd>暫停／切換全螢幕。</dd></dl>
       <p>淡色地面圓圈是實際積水落點，綠色圓圈表示進入馬桶。</p><p id="desktop-note">Ctrl+W 已攔截。離開可用暫停選單或 Alt+F4。</p>
     </dialog>
     <div id="error-panel" class="error-panel" hidden></div>
