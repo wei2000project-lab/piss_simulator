@@ -8,11 +8,22 @@
 
 啟動後會直接進入全螢幕遊戲，沒有開始頁或二次開始按鈕。3D 畫面佔滿視窗，目標、數據、操作提示與暫停選單均在遊戲畫面內；按 H 可隱藏操作介面。
 
-- 已安裝好本機相依套件，可直接啟動。
-- 將專案複製到其他電腦時，首次啟動會自動準備 Node.js、Three.js 與 Electron，需要網路；之後可以離線遊玩。
+- 從 GitHub 下載 ZIP 後，先完整解壓，再雙擊資料夾內的 `start.bat`。首次啟動會自動準備 Node.js、Three.js 與 Electron，需要網路；安裝完成後可以離線遊玩。
+- 不需預先安裝 Node.js、npm、Git 或解壓工具。啟動器可使用已安裝且完整的 Node.js/npm；否則下載官方 Windows ZIP，使用其中內建的 npm。支援 Windows x64／ARM64。
+- Node.js 下載採 SHA-256 驗證、暫存檔與自動重試，不會將未完成的壓縮檔直接解壓；npm 依 `package-lock.json` 安裝固定版本。中斷後重新執行即可修復，不必手動清除全部快取。
 - 不需要管理員權限。啟動器以專案資料夾為工作目錄，路徑可包含中文與空格。
 - HTTP 伺服器僅監聽 `127.0.0.1`，透過 `listen(0)` 請作業系統原子分配空閒 port。關閉遊戲會關閉伺服器。
 - 完整功能請由 `start.bat` 啟動。單純在一般瀏覽器開啟時，瀏覽器的安全限制無法保證原生游標定位或攔截關閉分頁快捷鍵。
+
+若舊版出現 `gzip: stdin: unexpected end of file` 或 `Could not extract npm.`，請重新下載最新版 ZIP 並完整解壓後啟動。新版已移除額外下載 `npm.tgz` 和呼叫 PATH 中 `tar.exe` 的流程，也處理 Windows PowerShell 5.1 的長路徑解壓。保留既有資料夾時，至少更新 `bootstrap.ps1`、`bootstrap-lib.ps1` 與 `package-lock.json`；舊的 `.runtime/npm.tgz` 不會再被使用。
+
+單獨準備／修復套件、不開啟遊戲：
+
+```powershell
+powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File bootstrap.ps1 -InstallOnly
+```
+
+首次安裝需要連上 `nodejs.org`、`registry.npmjs.org` 與 `github.com`（及其下載資產網域）。下載失敗時啟動器會顯示失敗階段與重試訊息，確認網路後再執行即可。
 
 ## 操作
 
@@ -70,7 +81,8 @@
 - `desktop.cjs`、`preload.cjs`：Electron 桌面視窗、受限 IPC、快捷鍵攔截與生命週期。
 - `native/CursorBridge.cs`：Windows `ClipCursor` 真實限制游標、`SetCursorPos` 定位、Raw Input 擷取相對位移。透過內建 Windows PowerShell 的 `Add-Type` 載入，不需額外安裝編譯器。
 - `server.cjs`：僅供本機使用的動態 port 靜態伺服器。
-- `bootstrap.ps1`、`start.bat`：一鍵啟動與首次相依套件準備。
+- `bootstrap.ps1`、`bootstrap-lib.ps1`、`start.bat`：一鍵啟動、官方 Node/npm、校驗與重試、長路徑 ZIP 解壓、相依套件修復。
+- `package-lock.json`：Windows 啟動器使用 npm ci 安裝的固定版本與完整性資料；pnpm 開發用鎖定檔另行保留。
 
 不使用瀏覽器假的游標圖片。右鍵模式會把 Windows 裁切矩形設為當前游標的 **1 × 1 實體像素**，Raw Input 繼續接收硬體位移；Ctrl 模式先移至內容視窗中央。原生助手在標準輸入斷線時也會解除鎖定並退出。
 
@@ -95,6 +107,8 @@ node --test tests/physics.test.mjs tests/puddles.test.mjs tests/water.test.mjs t
 `tests/desktop-check.cjs` 是本次開發環境用的 Playwright 桌面整合驗證，包含讀取 Windows 真實游標裁切矩形、Ctrl+W、跳躍、入桶計量、目標／沖水、地板積水、清理、補充、暫停、說明、重置、開關門、三區域往返、廚具阻擋、廚房積水與小視窗截圖。其 Playwright 路徑需依電腦環境調整。驗證畫面存於 `artifacts/`。
 
 `tests/performance-check.cjs` 在實際 Electron／WebGL 畫面計算繪製呼叫，驗證靜止、暫停、最小化均不繪圖、活動不超過 60 FPS 的取樣幀數上限、靜態陰影不重算，以及跳躍、調整視窗大小與恢復視窗能喚醒畫面。結果存於 `artifacts/performance-after.json`。
+
+`powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/bootstrap-check.ps1` 執行不需連網的啟動器回歸檢查：損壞下載、連線中斷、SHA-256、三次重試上限、快取重用、超過 260 字元的 ZIP 路徑、解壓範圍與清理範圍。另已在含中文及空格的全新資料夾，以 Windows PowerShell 5.1 實際下載官方 Node/npm 與全部套件，驗證依鎖定檔修復缺檔安裝、離線重啟及 `start.bat` 開啟／正常退出。`tests/start-check.ps1 -ProjectPath <資料夾>` 可驗證另一份乾淨下載的專案。
 
 Web 預覽（僅供開發）：
 

@@ -1,5 +1,7 @@
+param([string]$ProjectPath = (Split-Path -Parent $PSScriptRoot))
 $ErrorActionPreference = 'Stop'
-$project = Split-Path -Parent $PSScriptRoot
+$project = [IO.Path]::GetFullPath($ProjectPath)
+New-Item -ItemType Directory -Force -Path (Join-Path $project 'artifacts') | Out-Null
 $outPath = Join-Path $project 'artifacts\start-stdout.log'
 $errPath = Join-Path $project 'artifacts\start-stderr.log'
 $batch = Join-Path $project 'start.bat'
